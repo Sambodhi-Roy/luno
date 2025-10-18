@@ -86,22 +86,36 @@ describe("User Metadata Endpoints", () => {
     const username = `testuser-${Math.random()}`;
     const password = "password123";
 
-    await axios.post(`${BACKEND_URL}/api/v1/signup`, {
+    const signupResponse = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
       username,
       password,
       type: "admin",
     });
 
+    userId = signupResponse.data.userId;
+
+    console.log("userid is " + userId);
     const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
       username,
       password,
     });
 
-    const avatarResponse = await axios.get(
-      `${BACKEND_URL}/api/v1/admmin/avatar`
+    token = response.data.token;
+
+    const avatarResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/avatar`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQm3RFDZM21teuCMFYx_AROjt-AzUwDBROFww&s",
+        name: "Timmy",
+      },
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      }
     );
 
-    token = response.data.token;
     avatarId = avatarResponse.data.avatarId;
   });
 
@@ -143,5 +157,68 @@ describe("User Metadata Endpoints", () => {
     });
 
     expect(response.status).toBe(403); // Unauthorised
+  });
+});
+
+// Unauthenticated endpoints
+describe("User Avatar Information", () => {
+  let avatarId = "";
+  let token = "";
+  let userId = "";
+
+  beforeAll(async () => {
+    const username = `testuser-${Math.random()}`;
+    const password = "password123";
+
+    const signupResponse = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
+      username,
+      password,
+      type: "admin",
+    });
+
+    userId = signupResponse.data.userId;
+
+    console.log("userid is " + userId);
+    const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+      username,
+      password,
+    });
+
+    token = response.data.token;
+
+    const avatarResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/avatar`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQm3RFDZM21teuCMFYx_AROjt-AzUwDBROFww&s",
+        name: "Timmy",
+      },
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    avatarId = avatarResponse.data.avatarId;
+  });
+
+  test("Get back avatar information for a user", async () => {
+    const reponse = axios.get(
+      `${BACKEND_URL}/api/v1/user/metadata/bulk?ids=[${userId}]`
+    );
+
+    expect(response.data.avatars.length).toBe(1);
+    expect(response.data.avatars[0].userId).toBe(userId);
+  });
+
+  test("Get back all available avatars lists the recently created avatars", async () => {
+    const response = await axios.get(`${BACKEND_URL}/api/v1/avatars`);
+
+    expect(response.data.avatars.length).toBeGreaterThan(0);
+    const currentAvatar = response.data.avatars.find(
+      (avatar) => avatar.avatarId === avatarId
+    );
+    expect(currentAvatar).toBeDefined();
   });
 });
