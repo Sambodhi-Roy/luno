@@ -1,6 +1,7 @@
 const axios = require("axios");
 
 const BACKEND_URL = "http://localhost:3000";
+const WS_URL = "ws://localhost:3001";
 
 describe("Authentication", () => {
   test("User is able to sign up only once", async () => {
@@ -924,4 +925,195 @@ describe("Admin/Map Creator Endpoints", () => {
 
     expect(updateElementResponse.status).toBe(200);
   });
+});
+
+// Websockets Tests
+describe("Websockets Tests", () => {
+  let adminToken;
+  let adminId;
+  let userToken;
+  let userId;
+
+  let mapId;
+  let element1Id;
+  let element2Id;
+  let spaceId;
+
+  let ws1;
+  let ws2;
+  let ws1Messages;
+  let ws2Messages;
+
+  function waitForAndPopLatestMessages(messageArray) {
+    // Need to rewrite this function
+
+    return new Promise((r) => {
+      if (messageArray.length > 0) {
+        resolve(messageArray.shift());
+      } else {
+        let interval = setInterval(() => {
+          if (messageArray.length > 0) {
+            resolve(messageArray.shift());
+            clearInterval(interval);
+          }
+        }, 100);
+      }
+    });
+
+    // What this above code does is, if the messageArray is already populated, it returns the first element if it exists immediately
+
+    // But in case it doesnt, it waits for the array to be populated with some messages and returns the first element once it gets populated
+  }
+
+  async function setupHTTP() {
+    const username = `ws-admin-${Math.random()}`;
+    const password = "password123";
+
+    const adminSignUpResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signup`,
+      {
+        username: username,
+        password: password,
+        type: "admin",
+      }
+    );
+
+    const adminSignInResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signin`,
+      {
+        username: username,
+        password: password,
+      }
+    );
+
+    adminId = adminSignUpResponse.data.userId;
+    adminToken = adminSignInResponse.data.token;
+
+    const userSignUpResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signup`,
+      {
+        username: username + "-user",
+        password: password,
+        type: "user",
+      }
+    );
+
+    const userSignInResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signin`,
+      {
+        username: username + "-user",
+        password: password,
+      }
+    );
+
+    userId = userSignUpResponse.data.userId;
+    userToken = userSignInResponse.data.token;
+
+    const element1Response = await axios.post(
+      `${BACKEND_URL} /api/v1/admin/element`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+        width: 1,
+        height: 1,
+        static: true, // weather or not the user can sit on top of this element (is it considered as a collission or not)
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    const element2Response = await axios.post(
+      `${BACKEND_URL} /api/v1/admin/element`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+        width: 1,
+        height: 1,
+        static: true, // weather or not the user can sit on top of this element (is it considered as a collission or not)
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    element1Id = element1Response.data.id;
+    element2Id = element2Response.data.id;
+
+    const mapResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/map`,
+      {
+        thumbnail: "https://thumbnail.com/a.png",
+        dimensions: "100x200",
+        name: "100 person interview room",
+        defaultElements: [
+          {
+            elementId: element1Id,
+            x: 20,
+            y: 20,
+          },
+          {
+            elementId: element2Id,
+            x: 18,
+            y: 20,
+          },
+          {
+            elementId: element1Id,
+            x: 19,
+            y: 20,
+          },
+        ],
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    mapId = mapResponse.data.id;
+
+    const spaceResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/space`,
+      {
+        name: "Test",
+        dimensions: "100x200",
+        mapId: mapId,
+      },
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+        },
+      }
+    );
+
+    spaceId = spaceResponse.data.spaceId;
+  }
+
+  async function setupWebSocket() {
+    ws1 = new WebSocket(WS_URL);
+    ws2 = new WebSocket(WS_URL);
+
+    await new Promise((r) => {
+      ws1.onopen = r;
+    });
+
+    await new Promise((r) => {
+      ws2.onopen = r;
+    });
+
+    ws1.onmessage = (event) => {
+      ws1Messages.push(JSON.parse(event.data));
+    };
+
+    ws2.onmessage = (event) => {
+      ws2Messages.push(JSON.parse(event.data));
+    };
+  }
+
+  beforeAll(async () => {});
 });
