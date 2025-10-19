@@ -357,7 +357,7 @@ describe("Space Information Endpoints", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.spaceId).toBeDefined();
+    expect(response.data.spaceId).toBeDefined();
   });
 
   test("User is able to create a space without providing mapId (empty space)", async () => {
@@ -543,7 +543,7 @@ describe("Arena Tests", () => {
 
     userToken = userResponse.data.token;
 
-    const element1 = await axios.post(
+    const element1Response = await axios.post(
       `${BACKEND_URL} /api/v1/admin/element`,
       {
         imageUrl:
@@ -559,7 +559,7 @@ describe("Arena Tests", () => {
       }
     );
 
-    const element2 = await axios.post(
+    const element2Response = await axios.post(
       `${BACKEND_URL} /api/v1/admin/element`,
       {
         imageUrl:
@@ -575,10 +575,10 @@ describe("Arena Tests", () => {
       }
     );
 
-    element1Id = element1.id;
-    element2Id = element2.elementId;
+    element1Id = element1Response.data.id;
+    element2Id = element2Response.data.id;
 
-    const map = await axios.post(
+    const mapResponse = await axios.post(
       `${BACKEND_URL}/api/v1/admin/map`,
       {
         thumbnail: "https://thumbnail.com/a.png",
@@ -609,7 +609,7 @@ describe("Arena Tests", () => {
       }
     );
 
-    mapId = map.id;
+    mapId = mapResponse.data.id;
 
     const spaceResponse = await axios.post(
       `${BACKEND_URL}/api/v1/space`,
@@ -625,7 +625,7 @@ describe("Arena Tests", () => {
       }
     );
 
-    spaceId = spaceResponse.spaceId;
+    spaceId = spaceResponse.data.spaceId;
   });
 
   test("Incorrect spaceId returns 400", async () => {
@@ -727,5 +727,201 @@ describe("Arena Tests", () => {
       }
     );
     expect(newReponse.data.elements.length).toBe(3);
+  });
+});
+
+// Admin/Map Creator Endpoints
+describe("Admin/Map Creator Endpoints", () => {
+  let adminToken;
+  let adminId;
+  let userToken;
+  let userId;
+
+  beforeAll(async () => {
+    const username = `testuser-${Math.random()}`;
+    const password = "password123";
+
+    const adminSignUpResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signup`,
+      {
+        username,
+        password,
+        type: "admin",
+      }
+    );
+    adminId = adminSignUpResponse.data.userId;
+
+    const adminResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+      username,
+      password,
+    });
+
+    adminToken = adminResponse.data.token;
+
+    const userSignUpResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signup`,
+      {
+        username: username + "-user",
+        password,
+        type: "user",
+      }
+    );
+    userId = userSignUpResponse.data.userId;
+
+    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+      username: username + "-user",
+      password,
+    });
+
+    userToken = userResponse.data.token;
+  });
+
+  test("User is not able to hit admin endpoints", async () => {
+    const elementResponse = await axios.post(
+      `${BACKEND_URL} /api/v1/admin/element`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+        width: 1,
+        height: 1,
+        static: true, // weather or not the user can sit on top of this element (is it considered as a collission or not)
+      },
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+        },
+      }
+    );
+
+    const mapResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/map`,
+      {
+        thumbnail: "https://thumbnail.com/a.png",
+        dimensions: "100x200",
+        name: "100 person interview room",
+        defaultElements: [],
+      },
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+        },
+      }
+    );
+
+    const createAvatarResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/avatar`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQm3RFDZM21teuCMFYx_AROjt-AzUwDBROFww&s",
+        name: "Timmy",
+      },
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+        },
+      }
+    );
+
+    const updateElementResponse = await axios.put(
+      `${BACKEND_URL}/api/v1/admin/element/123`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+      },
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+        },
+      }
+    );
+
+    expect(elementResponse.status).toBe(403);
+    expect(mapResponse.status).toBe(403);
+    expect(createAvatarResponse.status).toBe(403);
+    expect(updateElementResponse.status).toBe(403);
+  });
+
+  test("Admin is able to hit admin endpoints", async () => {
+    const elementResponse = await axios.post(
+      `${BACKEND_URL} /api/v1/admin/element`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+        width: 1,
+        height: 1,
+        static: true, // weather or not the user can sit on top of this element (is it considered as a collission or not)
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    const mapResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/map`,
+      {
+        thumbnail: "https://thumbnail.com/a.png",
+        dimensions: "100x200",
+        name: "100 person interview room",
+        defaultElements: [],
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    const createAvatarResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/admin/avatar`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQm3RFDZM21teuCMFYx_AROjt-AzUwDBROFww&s",
+        name: "Timmy",
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    expect(elementResponse.status).toBe(200);
+    expect(mapResponse.status).toBe(200);
+    expect(createAvatarResponse.status).toBe(200);
+  });
+
+  test("Admin is able to update the imageUrl for an element", async () => {
+    const elementResponse = await axios.post(
+      `${BACKEND_URL} /api/v1/admin/element`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+        width: 1,
+        height: 1,
+        static: true, // weather or not the user can sit on top of this element (is it considered as a collission or not)
+      },
+      {
+        headers: {
+          authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+
+    const updateElementResponse = await axios.put(
+      `${BACKEND_URL}/api/v1/admin/element/${elementResponse.data.id}`,
+      {
+        imageUrl:
+          "https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcRCRca3wAR4zjPPTzeIY9rSwbbqB6bB2hVkoTXN4eerXOIkJTG1GpZ9ZqSGYafQPToWy_JTcmV5RHXsAsWQC3tKnMlH_CsibsSZ5oJtbakq&usqp=CAE",
+      },
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+        },
+      }
+    );
+
+    expect(updateElementResponse.status).toBe(200);
   });
 });
