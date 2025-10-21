@@ -1139,6 +1139,8 @@ describe("Websockets Tests", () => {
       })
     );
 
+    const message1 = await waitForAndPopLatestMessages(ws1Messages);
+
     ws2.send(
       JSON.stringify({
         type: "join",
@@ -1149,15 +1151,18 @@ describe("Websockets Tests", () => {
       })
     );
 
-    const message1 = await waitForAndPopLatestMessages(ws1Messages);
     const message2 = await waitForAndPopLatestMessages(ws2Messages);
+    const message3 = await waitForAndPopLatestMessages(ws1Messages); // ws1 should get a message about ws2 joining
 
     expect(message1.type).toBe("space-joined");
     expect(message2.type).toBe("space-joined");
 
-    expect(message1.payload.users.length + message2.payload.users.length).toBe(
-      1
-    );
+    expect(message1.payload.users.length).toBe(0);
+    expect(message2.payload.users.length).toBe(1); // since admin joined first
+    expect(message3.type).toBe("user-join");
+    expect(message3.payload.x).toBe(message2.payload.spawn.x);
+    expect(message3.payload.y).toBe(message2.payload.spawn.y);
+    expect(message3.payload.userId).toBe(userId);
 
     adminX = message1.payload.spawn.x;
     adminY = message1.payload.spawn.y;
