@@ -7,7 +7,7 @@ describe("Authentication", () => {
   test("User is able to sign up only once", async () => {
     const username = "testuser" + Math.random(); // testuser0.12331313
     const password = "password123";
-    const response = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
       username,
       password,
       type: "admin",
@@ -16,11 +16,14 @@ describe("Authentication", () => {
     expect(response.status).toBe(200);
 
     // Try signing up again with the same username
-    const updatedResponse = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
-      username,
-      password,
-      type: "admin",
-    });
+    const updatedResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/user/signup`,
+      {
+        username,
+        password,
+        type: "admin",
+      }
+    );
 
     expect(updatedResponse.status).toBe(400);
   });
@@ -30,7 +33,7 @@ describe("Authentication", () => {
     const password = "password123";
 
     // Signup request with empty username should fail
-    const response = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
       password,
     });
 
@@ -42,14 +45,14 @@ describe("Authentication", () => {
     const password = "password123";
 
     // First, sign up the user
-    await axios.post(`${BACKEND_URL}/api/v1/signup`, {
+    await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
       username,
       password,
       type: "admin",
     });
 
     // Then, attempt to sign in
-    const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username,
       password,
     });
@@ -62,13 +65,13 @@ describe("Authentication", () => {
     const username = `testuser-${Math.random()}`;
     const password = "password123";
 
-    await axios.post(`${BACKEND_URL}/api/v1/signup`, {
+    await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
       username,
       password,
       role: "admin",
     });
 
-    const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username: "WrongUsername",
       password,
     });
@@ -87,16 +90,19 @@ describe("User Metadata Endpoints", () => {
     const username = `testuser-${Math.random()}`;
     const password = "password123";
 
-    const signupResponse = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
-      username,
-      password,
-      type: "admin",
-    });
+    const signupResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/user/signup`,
+      {
+        username,
+        password,
+        type: "admin",
+      }
+    );
 
     userId = signupResponse.data.userId;
 
     console.log("userid is " + userId);
-    const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username,
       password,
     });
@@ -171,16 +177,19 @@ describe("User Avatar Information", () => {
     const username = `testuser-${Math.random()}`;
     const password = "password123";
 
-    const signupResponse = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
-      username,
-      password,
-      type: "admin",
-    });
+    const signupResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/user/signup`,
+      {
+        username,
+        password,
+        type: "admin",
+      }
+    );
 
     userId = signupResponse.data.userId;
 
     console.log("userid is " + userId);
-    const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username,
       password,
     });
@@ -239,7 +248,7 @@ describe("Space Information Endpoints", () => {
     const password = "password123";
 
     const adminSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username,
         password,
@@ -248,15 +257,18 @@ describe("Space Information Endpoints", () => {
     );
     adminId = adminSignUpResponse.data.userId;
 
-    const adminResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
-      username,
-      password,
-    });
+    const adminResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/user/signin`,
+      {
+        username,
+        password,
+      }
+    );
 
     adminToken = adminResponse.data.token;
 
     const userSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username: username + "-user",
         password,
@@ -265,7 +277,7 @@ describe("Space Information Endpoints", () => {
     );
     userId = userSignUpResponse.data.userId;
 
-    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username: username + "-user",
       password,
     });
@@ -511,7 +523,7 @@ describe("Arena Tests", () => {
     const password = "password123";
 
     const adminSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username,
         password,
@@ -520,15 +532,18 @@ describe("Arena Tests", () => {
     );
     adminId = adminSignUpResponse.data.userId;
 
-    const adminResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
-      username,
-      password,
-    });
+    const adminResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/user/signin`,
+      {
+        username,
+        password,
+      }
+    );
 
     adminToken = adminResponse.data.token;
 
     const userSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username: username + "-user",
         password,
@@ -537,7 +552,7 @@ describe("Arena Tests", () => {
     );
     userId = userSignUpResponse.data.userId;
 
-    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username: username + "-user",
       password,
     });
@@ -743,7 +758,7 @@ describe("Admin/Map Creator Endpoints", () => {
     const password = "password123";
 
     const adminSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username,
         password,
@@ -752,15 +767,18 @@ describe("Admin/Map Creator Endpoints", () => {
     );
     adminId = adminSignUpResponse.data.userId;
 
-    const adminResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
-      username,
-      password,
-    });
+    const adminResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/user/signin`,
+      {
+        username,
+        password,
+      }
+    );
 
     adminToken = adminResponse.data.token;
 
     const userSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username: username + "-user",
         password,
@@ -769,7 +787,7 @@ describe("Admin/Map Creator Endpoints", () => {
     );
     userId = userSignUpResponse.data.userId;
 
-    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const userResponse = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
       username: username + "-user",
       password,
     });
@@ -974,7 +992,7 @@ describe("Websockets Tests", () => {
     const password = "password123";
 
     const adminSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username: username,
         password: password,
@@ -983,7 +1001,7 @@ describe("Websockets Tests", () => {
     );
 
     const adminSignInResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signin`,
+      `${BACKEND_URL}/api/v1/user/signin`,
       {
         username: username,
         password: password,
@@ -994,7 +1012,7 @@ describe("Websockets Tests", () => {
     adminToken = adminSignInResponse.data.token;
 
     const userSignUpResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signup`,
+      `${BACKEND_URL}/api/v1/user/signup`,
       {
         username: username + "-user",
         password: password,
@@ -1003,7 +1021,7 @@ describe("Websockets Tests", () => {
     );
 
     const userSignInResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/signin`,
+      `${BACKEND_URL}/api/v1/user/signin`,
       {
         username: username + "-user",
         password: password,

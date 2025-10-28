@@ -13,9 +13,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@repo/db": "workspace:*",
     "@types/express": "^5.0.3",
     "express": "^5.1.0",
     "typescript": "^5.9.3",
-    "@repo/db": "workspace:*"
+    "zod": "^4.1.12"
   }
 }
