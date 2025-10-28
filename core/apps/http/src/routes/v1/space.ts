@@ -10,6 +10,8 @@ spaceRouter.get("/:spaceId", (req, res) => {});
 
 spaceRouter.delete("/:spaceId", (req, res) => {});
 
+spaceRouter.get("/elements", (req, res) => {});
+
 spaceRouter.post("/element", (req, res) => {});
 
 spaceRouter.delete("/element", (req, res) => {});

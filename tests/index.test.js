@@ -223,7 +223,7 @@ describe("User Avatar Information", () => {
   });
 
   test("Get back all available avatars lists the recently created avatars", async () => {
-    const response = await axios.get(`${BACKEND_URL}/api/v1/avatars`);
+    const response = await axios.get(`${BACKEND_URL}/api/v1/user/avatars`);
 
     expect(response.data.avatars.length).toBeGreaterThan(0);
     const currentAvatar = response.data.avatars.find(
