@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { userRouter } from "./user.js";
-import { spaceRouter } from "./space.js";
-import { adminRouter } from "./admin.js";
+import { userRouter } from "./user.route.js";
+import { spaceRouter } from "./space.route.js";
+import { adminRouter } from "./admin.route.js";
 import { SignupSchema } from "../../types/index.js";
 import { parse } from "zod";
 
