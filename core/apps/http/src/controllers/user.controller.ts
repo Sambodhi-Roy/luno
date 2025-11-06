@@ -1,9 +1,14 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
-import { SignupSchema, SigninSchema } from "../types/index.js";
+import {
+  SignupSchema,
+  SigninSchema,
+  updateMetadataSchema,
+} from "../types/index.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { parse } from "dotenv";
+import { date } from "zod";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Missing JWT_SECRET in environment variables");
@@ -159,6 +164,47 @@ export const getAvatars = async (req: Request, res: Response) => {
     });
   } catch (e) {
     console.log("Error detected", e);
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const updateUserMetadata = async (req: Request, res: Response) => {
+  const parsedData = updateMetadataSchema.safeParse(req.body);
+
+  if (!parsedData.success) {
+    return res.status(400).json({
+      message: "Validation failed",
+    });
+  }
+
+  const { avatarId } = parsedData.data;
+
+  const userId = (req as any).userId; // From middleware
+
+  try {
+    const avatar = await client.avatar.findUnique({
+      where: { id: avatarId },
+    });
+
+    if (!avatar) {
+      return res.status(400).json({
+        message: "Avatar not found",
+      });
+    }
+
+    const updateUser = await client.user.update({
+      where: { id: userId },
+      data: { avatarId },
+      select: { id: true, username: true, avatarId: true },
+    });
+
+    return res.status(200).json({
+      message: "User metadata updated successfully",
+    });
+  } catch (e) {
+    console.log("Error detected: ", e);
     return res.status(500).json({
       message: "Internal Server Error",
     });
