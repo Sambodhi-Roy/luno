@@ -8,7 +8,7 @@ import {
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { parse } from "dotenv";
-import { date } from "zod";
+import { date, json } from "zod";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Missing JWT_SECRET in environment variables");
@@ -202,6 +202,76 @@ export const updateUserMetadata = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: "User metadata updated successfully",
+    });
+  } catch (e) {
+    console.log("Error detected: ", e);
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const getBulkUserMetadata = async (req: Request, res: Response) => {
+  const idsParam = req.query.ids as string | undefined;
+
+  if (!idsParam) {
+    return res.status(400).json({
+      message: "Missing 'ids' query parameter",
+    });
+  }
+
+  let userIds: string[];
+  try {
+    try {
+      if (idsParam.startsWith("[")) {
+        userIds = JSON.parse(idsParam);
+      } else {
+        userIds = idsParam.split(",");
+      }
+    } catch (e) {
+      console.log(
+        "Invalid 'ids' format. Expected array or comma-separated list"
+      );
+      return res.status(400).json({
+        message: "Incorrect 'ids' format error",
+      });
+    }
+
+    if (userIds.length === 0) {
+      return res.status(400).json({
+        message: "No user ids provided",
+      });
+    }
+
+    const users = client.user.findMany({
+      where: {
+        id: { in: userIds },
+      },
+      select: {
+        id: true,
+        avatar: {
+          select: {
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        message: "No users found with the given ids",
+      });
+    }
+
+    const avatars = users.map(
+      (user: { id: string; avatar?: { imageUrl?: string | null } }) => ({
+        userId: user.id,
+        imageUrl: user.avatar?.imageUrl || null,
+      })
+    );
+
+    return res.status(200).json({
+      avatars,
     });
   } catch (e) {
     console.log("Error detected: ", e);
