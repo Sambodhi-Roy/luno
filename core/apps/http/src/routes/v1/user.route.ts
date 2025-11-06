@@ -9,6 +9,7 @@ import {
   signup,
   updateUserMetadata,
 } from "../../controllers/user.controller.js";
+import { authenticateUser } from "../../middleware/userAuth.middleware.js";
 
 export const userRouter = Router();
 
@@ -18,6 +19,6 @@ userRouter.post("/signin", signin);
 
 userRouter.get("/avatars", getAvatars);
 
-userRouter.post("/metadata", updateUserMetadata);
+userRouter.post("/metadata", authenticateUser, updateUserMetadata);
 
-userRouter.get("/metadata/bulk", getBulkUserMetadata);
+userRouter.get("/metadata/bulk", authenticateUser, getBulkUserMetadata);

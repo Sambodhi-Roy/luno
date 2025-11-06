@@ -182,6 +182,9 @@ export const updateUserMetadata = async (req: Request, res: Response) => {
   const { avatarId } = parsedData.data;
 
   const userId = (req as any).userId; // From middleware
+  // export interface AuthRequest extends Request{
+  // user? SomethingJWT
+  // }
 
   try {
     const avatar = await client.avatar.findUnique({
