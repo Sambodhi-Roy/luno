@@ -133,3 +133,34 @@ export const signin = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const getAvatars = async (req: Request, res: Response) => {
+  try {
+    const avatars = client.avatar.findMany({
+      select: {
+        id: true,
+        name: true,
+        imageUrl: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+    });
+
+    if (avatars.length === 0) {
+      return res.status(404).json({
+        message: "No avatars found in database",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Avatars fetched successfully",
+      avatars,
+    });
+  } catch (e) {
+    console.log("Error detected", e);
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
