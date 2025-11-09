@@ -7,6 +7,10 @@ if (!process.env.JWT_SECRET) {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+interface JwtPayload {
+  userId: string;
+}
+
 export const authenticateUser = (
   req: Request,
   res: Response,
@@ -21,11 +25,13 @@ export const authenticateUser = (
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    (req as any).userId = decoded.userId;
-    next();
-  } catch (e) {
-    console.log("JWT Verification failed ", e);
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+
+    req.user = { id: decoded.userId };
+
+    return next();
+  } catch (err) {
+    console.error("❌ JWT verification failed:", err);
     return res.status(403).json({
       message: "Forbidden: Invalid or expired token",
     });

@@ -4,6 +4,7 @@
     // File Layout
     "rootDir": "./src",
     "outDir": "../dist",
+    "typeRoots": ["./src/types", "./node_modules/@types"],
 
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
@@ -41,5 +42,6 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true
-  }
+  },
+  "include": ["src"]
 }
