@@ -1,8 +1,9 @@
 import { Router } from "express";
+import { createSpace } from "../../controllers/space.controller.js";
 
 export const spaceRouter = Router();
 
-spaceRouter.post("/", (req, res) => {});
+spaceRouter.post("/", createSpace);
 
 spaceRouter.get("/all", (req, res) => {});
 
