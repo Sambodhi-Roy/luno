@@ -3,7 +3,7 @@
   "compilerOptions": {
     // File Layout
     "rootDir": "./src",
-    "outDir": "../dist",
+    "outDir": "./dist",
     "typeRoots": ["./src/types", "./node_modules/@types"],
 
     // Environment Settings
@@ -43,5 +43,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["dist", "dist/**", "**/dist", "**/node_modules/**"]
 }

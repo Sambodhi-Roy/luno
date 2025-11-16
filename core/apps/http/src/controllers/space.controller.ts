@@ -25,18 +25,23 @@ export const createSpace = async (req: Request, res: Response) => {
       message: "Unauthorized",
     });
   }
+  try {
+    const space = await client.space.create({
+      data: {
+        name,
+        width,
+        height,
+        creatorId,
+        ...(mapId && { mapId }),
+      },
+    });
 
-  const space = await client.space.create({
-    data: {
-      name,
-      width,
-      height,
-      creatorId,
-      ...(mapId && { mapId }),
-    },
-  });
-
-  return res.status(200).json({
-    message: "Space created successfully",
-  });
+    return res.status(200).json({
+      message: "Space created successfully",
+    });
+  } catch (e) {
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
 };

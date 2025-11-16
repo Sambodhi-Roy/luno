@@ -12,10 +12,14 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",
     "prisma": "^6.18.0"
+  },
+  "prisma": {
+    "schema": "./prisma/schema.prisma"
   }
 }
