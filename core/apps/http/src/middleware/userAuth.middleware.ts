@@ -1,11 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("Missing JWT_SECRET in environment variables");
-}
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const getJWTSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("Missing JWT_SECRET in environment variables");
+  }
+  return secret;
+};
 
 interface JwtPayload {
   userId: string;
@@ -25,7 +27,7 @@ export const authenticateUser = (
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, getJWTSecret()) as JwtPayload;
 
     req.user = { id: decoded.userId };
 

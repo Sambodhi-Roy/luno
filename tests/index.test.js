@@ -10,7 +10,6 @@ describe("Authentication", () => {
     const response = await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
       username,
       password,
-      type: "admin",
     });
 
     expect(response.status).toBe(200);
@@ -21,7 +20,6 @@ describe("Authentication", () => {
       {
         username,
         password,
-        type: "admin",
       }
     );
 

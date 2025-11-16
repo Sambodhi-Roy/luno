@@ -10,11 +10,13 @@ import bcrypt from "bcrypt";
 import { parse } from "dotenv";
 import { date, json } from "zod";
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("Missing JWT_SECRET in environment variables");
-}
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const getJWTSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("Missing JWT_SECRET in environment variables");
+  }
+  return secret;
+};
 
 export const signup = async (req: Request, res: Response) => {
   const parsedData = SignupSchema.safeParse(req.body);
@@ -62,7 +64,7 @@ export const signup = async (req: Request, res: Response) => {
     });
 
     // Generating JWT token
-    const token = jwt.sign({ userid: newUser.id }, JWT_SECRET, {
+    const token = jwt.sign({ userid: newUser.id }, getJWTSecret(), {
       expiresIn: "7d",
     });
 
@@ -117,7 +119,7 @@ export const signin = async (req: Request, res: Response) => {
       });
     }
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
+    const token = jwt.sign({ userId: user.id }, getJWTSecret(), {
       expiresIn: "7d",
     });
 
