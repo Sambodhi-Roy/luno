@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { createSpace } from "../../controllers/space.controller.js";
+import { authenticateUser } from "../../middleware/userAuth.middleware.js";
 
 export const spaceRouter = Router();
 
-spaceRouter.post("/", createSpace);
+spaceRouter.post("/", authenticateUser, createSpace);
 
 spaceRouter.get("/all", (req, res) => {});
 

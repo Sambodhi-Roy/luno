@@ -49,7 +49,7 @@ export const signup = async (req: Request, res: Response) => {
       const randomIndex = Math.floor(Math.random() * avatars.length);
       avatarToUse = avatars[randomIndex].id;
     } else {
-      console.log("No user found in database, User will have no avatar yet");
+      console.log("No avatar found in database, User will have no avatar yet");
       avatarToUse = null;
     }
 

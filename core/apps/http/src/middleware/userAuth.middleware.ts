@@ -18,6 +18,7 @@ export const authenticateUser = (
   res: Response,
   next: NextFunction
 ) => {
+  console.log("Hi");
   const token = req.cookies?.token;
 
   if (!token) {
