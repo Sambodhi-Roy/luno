@@ -15,15 +15,18 @@ describe("Authentication", () => {
     expect(response.status).toBe(200);
 
     // Try signing up again with the same username
-    const updatedResponse = await axios.post(
-      `${BACKEND_URL}/api/v1/user/signup`,
-      {
+    let error;
+    try {
+      await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
         username,
         password,
-      }
-    );
+      });
+    } catch (e) {
+      error = e;
+    }
 
-    expect(updatedResponse.status).toBe(400);
+    expect(error).toBeDefined();
+    expect(error.response.status).toBe(409);
   });
 
   test("Signup request fails if the username is empty", async () => {
@@ -31,11 +34,17 @@ describe("Authentication", () => {
     const password = "password123";
 
     // Signup request with empty username should fail
-    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
-      password,
-    });
+    let error;
+    try {
+      await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
+        password,
+      });
+    } catch (e) {
+      error = e;
+    }
 
-    expect(response.status).toBe(400);
+    expect(error).toBeDefined();
+    expect(error.response.status).toBe(400);
   });
 
   test("Signin succeeds if the username and password are correct", async () => {
@@ -69,12 +78,18 @@ describe("Authentication", () => {
       role: "admin",
     });
 
-    const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
-      username: "WrongUsername",
-      password,
-    });
+    let error;
+    try {
+      const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
+        username: "WrongUsername",
+        password,
+      });
+    } catch (e) {
+      error = e;
+    }
 
-    expect(response.status).toBe(403);
+    expect(error).toBeDefined();
+    expect(error.response.status).toBe(401);
   });
 });
 

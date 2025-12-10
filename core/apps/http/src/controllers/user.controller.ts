@@ -132,6 +132,7 @@ export const signin = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: "User signed in successfully",
+      token,
     });
   } catch (e) {
     console.log("Error detected", e);
@@ -143,7 +144,7 @@ export const signin = async (req: Request, res: Response) => {
 
 export const getAvatars = async (req: Request, res: Response) => {
   try {
-    const avatars = client.avatar.findMany({
+    const avatars = await client.avatar.findMany({
       select: {
         id: true,
         name: true,
@@ -248,7 +249,7 @@ export const getBulkUserMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    const users = client.user.findMany({
+    const users = await client.user.findMany({
       where: {
         id: { in: userIds },
       },
