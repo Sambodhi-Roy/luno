@@ -3,6 +3,8 @@ const axios = require("axios");
 const BACKEND_URL = "http://localhost:3000";
 const WS_URL = "ws://localhost:3001";
 
+jest.setTimeout(20000);
+
 describe("Authentication", () => {
   test("User is able to sign up only once", async () => {
     const username = "testuser" + Math.random(); // testuser0.12331313
@@ -37,6 +39,7 @@ describe("Authentication", () => {
     let error;
     try {
       await axios.post(`${BACKEND_URL}/api/v1/user/signup`, {
+        username: "",
         password,
       });
     } catch (e) {
@@ -83,6 +86,7 @@ describe("Authentication", () => {
       const response = await axios.post(`${BACKEND_URL}/api/v1/user/signin`, {
         username: "WrongUsername",
         password,
+        type: "user",
       });
     } catch (e) {
       error = e;

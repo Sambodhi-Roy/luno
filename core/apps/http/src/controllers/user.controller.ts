@@ -42,24 +42,30 @@ export const signup = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let avatarToUse;
+    let avatarToUse: string | null = null;
 
     const avatars = await client.avatar.findMany();
     if (avatars.length > 0) {
       const randomIndex = Math.floor(Math.random() * avatars.length);
-      avatarToUse = avatars[randomIndex].id;
+      const randomAvatar = avatars[randomIndex];
+
+      if (randomAvatar) {
+        avatarToUse = randomAvatar.id;
+      }
     } else {
       console.log("No avatar found in database, User will have no avatar yet");
-      avatarToUse = null;
     }
 
-    // Adding the new User to the database
     const newUser = await client.user.create({
       data: {
         username: username,
         password: hashedPassword,
-        avatarId: avatarToUse ?? undefined,
         role: "User",
+        ...(avatarToUse && {
+          avatar: {
+            connect: { id: avatarToUse },
+          },
+        }),
       },
     });
 
@@ -269,16 +275,12 @@ export const getBulkUserMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    const avatars = users.map(
-      (user: { id: string; avatar?: { imageUrl?: string | null } }) => ({
-        userId: user.id,
-        imageUrl: user.avatar?.imageUrl || null,
-      })
-    );
+    const avatars = users.map((user) => ({
+      userId: user.id,
+      imageUrl: user.avatar?.imageUrl ?? null,
+    }));
 
-    return res.status(200).json({
-      avatars,
-    });
+    return res.status(200).json({ avatars });
   } catch (e) {
     console.log("Error detected: ", e);
     return res.status(500).json({

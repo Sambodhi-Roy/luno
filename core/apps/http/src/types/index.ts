@@ -1,12 +1,12 @@
 import { z } from "zod";
 
 export const SignupSchema = z.object({
-  username: z.string(),
+  username: z.string().trim().min(1, "Username is required"),
   password: z.string().min(8),
 });
 
 export const SigninSchema = z.object({
-  username: z.string(),
+  username: z.string().trim().min(1, "Username is required"),
   password: z.string().min(8),
 });
 
