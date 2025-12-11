@@ -49,6 +49,7 @@ model Element {
   width    Int
   height   Int
   imageUrl String
+  static   Boolean @default(false)
   spaces   spaceElements[]
   mapElements     MapElements[] 
 }

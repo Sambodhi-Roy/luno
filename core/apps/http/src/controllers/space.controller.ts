@@ -137,7 +137,7 @@ export const getSpace = async (req: Request, res: Response) => {
         imageUrl: se.element.imageUrl,
         height: se.element.height,
         width: se.element.width,
-        static: false,
+        static: se.element.static,
       },
       x: se.x,
       y: se.y,
