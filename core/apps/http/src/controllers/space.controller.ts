@@ -153,3 +153,54 @@ export const getSpace = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const deleteSpace = async (req: Request, res: Response) => {
+  const creatorId = req.user?.id;
+  const { spaceId } = req.params;
+
+  if (!creatorId) {
+    return res.status(401).json({
+      messgae: "Unauthorised",
+    });
+  }
+
+  if (!spaceId) {
+    return res.status(400).json({
+      message: "SpaceId param is required",
+    });
+  }
+
+  try {
+    const space = await client.space.findFirst({
+      where: {
+        id: spaceId,
+        creatorId,
+      },
+      include: {
+        elements: true,
+      },
+    });
+
+    if (!space) {
+      return res.status(404).json({
+        message: "SpaceId not found, Invalid SpaceId",
+      });
+    }
+
+    await client.spaceElements.deleteMany({
+      where: { spaceId },
+    });
+
+    await client.space.delete({
+      where: { id: spaceId },
+    });
+
+    return res.status(200).json({
+      message: "Space deleted successfully",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
