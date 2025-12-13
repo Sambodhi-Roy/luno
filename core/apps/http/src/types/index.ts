@@ -55,3 +55,7 @@ export const createMapSchema = z.object({
     })
   ),
 });
+
+export const deleteElementSchema = z.object({
+  id: z.string()
+}) 

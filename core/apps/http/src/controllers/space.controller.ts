@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
-import { createSpaceSchema, addElementSchema } from "../types/index.js";
+import { createSpaceSchema, addElementSchema, deleteElementSchema } from "../types/index.js";
 import { parse } from "dotenv";
 import { Prisma } from "@repo/db/client";
 
@@ -204,3 +204,109 @@ export const deleteSpace = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const getAllElements = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    res.status(401).json({
+      message: "Unauthorised",
+    });
+  }
+
+  try {
+    const elements = await client.element.findMany({
+      select: {
+        id: true,
+        imageUrl: true,
+        width: true,
+        height: true,
+        static: true,
+      },
+    });
+
+    return res.status(200).json({
+      elements,
+    });
+  } catch (e) {
+    console.log("Error fetching elements");
+    res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const addElementToSpace = async (req:Request, res:Response) => {
+  const userId = req.user?.id
+  if(!userId)
+  {
+    return res.status(401).json({
+      message: "Unauthorised"
+    })
+  }
+
+  const parsed = addElementSchema.safeParse(req.body)
+  if(!parsed.success)
+  {
+    return res.status(400).json({
+      message: "Validation failed",
+      errors: parsed.error
+    })
+  }
+
+  const {spaceId, elementId, x, y} = parsed.data;
+
+  try{
+    const space = await client.space.findFirst({
+      where: {
+        id: spaceId,
+        creatorId: userId
+      }
+    });
+
+    if(!space){
+      return res.status(400).json({
+        message: "Invalid spaceId or access denied"
+      })
+    }
+
+    const element = await client.element.findUnique({
+      where: {
+        id: elementId,
+      }
+    })
+
+    if(!element)
+    {
+      return res.status(400).json({
+        message: "Invalid elementId"
+      })
+    }
+
+    const spaceElement = await client.spaceElements.create({
+      data:{
+        spaceId,
+        elementId,
+        x,
+        y,
+      }
+    })
+
+    return res.status(200).json({
+      message: "Element added to space successfully",
+      element:{
+        id: spaceElement.id,
+        elementId,
+        x,
+        y
+      }
+    })
+  }
+  catch(e)
+  {
+    return res.status(500).json({
+      message: "Internal Server Error"
+    })
+  }
+}
+
