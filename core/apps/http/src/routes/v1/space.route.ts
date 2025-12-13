@@ -1,19 +1,19 @@
 import { Router } from "express";
-import { createSpace } from "../../controllers/space.controller.js";
+import { addElementToSpace, createSpace, deleteSpace, getAllElements, getAllSpaces, getSpace, removeElementFromSpace } from "../../controllers/space.controller.js";
 import { authenticateUser } from "../../middleware/userAuth.middleware.js";
 
 export const spaceRouter = Router();
 
 spaceRouter.post("/", authenticateUser, createSpace);
 
-spaceRouter.get("/all", (req, res) => {});
+spaceRouter.get("/all", authenticateUser, getAllSpaces);
 
-spaceRouter.get("/:spaceId", (req, res) => {});
+spaceRouter.get("/:spaceId", authenticateUser ,getSpace);
 
-spaceRouter.delete("/:spaceId", (req, res) => {});
+spaceRouter.delete("/:spaceId", authenticateUser ,deleteSpace);
 
-spaceRouter.get("/elements", (req, res) => {});
+spaceRouter.get("/elements", getAllElements);
 
-spaceRouter.post("/element", (req, res) => {});
+spaceRouter.post("/element", authenticateUser, addElementToSpace);
 
-spaceRouter.delete("/element", (req, res) => {});
+spaceRouter.delete("/element", authenticateUser, removeElementFromSpace);

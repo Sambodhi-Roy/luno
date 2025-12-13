@@ -365,5 +365,4 @@ export const removeElementFromSpace = async(req:Request, res:Response)=>{
       message: "Internal Server Error"
     })
   }
-
 }
