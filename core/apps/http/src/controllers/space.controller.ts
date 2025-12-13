@@ -310,3 +310,60 @@ export const addElementToSpace = async (req:Request, res:Response) => {
   }
 }
 
+export const removeElementFromSpace = async(req:Request, res:Response)=>{
+  const userId = req.user?.id
+  if(!userId){
+    return res.status(401).json({
+      message: "Unauthorized"
+    })
+  }
+
+  const parsed = deleteElementSchema.safeParse(req.body)
+
+  if(!parsed.success)
+  {
+    return res.status(400).json({
+      message: "spaceElement id is required"
+    })
+  }
+
+  try{
+    const {id} = parsed.data;
+
+    const spaceElement = await client.spaceElements.findFirst({
+      where: {id},
+      include:{
+        space: true,
+      }
+    })
+
+    if(!spaceElement){
+      return res.status(400).json({
+        message: "Invalid element id"
+      })
+    }
+
+    if(spaceElement.space.creatorId !== userId){
+      return res.status(400).json({
+        message: "You do not have permission to modify this space",
+      })
+    }
+
+    await client.spaceElements.delete({
+      where: {
+        id
+      }
+    })
+
+    return res.status(200).json({
+      message: "Element removed from space successfully"
+    })
+  }
+  catch(e)
+  {
+    return res.status(500).json({
+      message: "Internal Server Error"
+    })
+  }
+
+}
