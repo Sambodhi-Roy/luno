@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
-import { createElementSchema, updateElementSchema } from "../types/index.js";
+import { createAvatarSchema, createElementSchema, updateElementSchema } from "../types/index.js";
 import { parse } from "dotenv";
 
 export const createElement = async(req:Request, res: Response) => {
@@ -70,6 +70,36 @@ export const updateElement = async(req: Request, res: Response)=>{
     {
         return res.status(500).json({
             message: "Internal Server Error"
+        })
+    }
+}
+
+export const createAvatar = async(req: Request, res: Response) => {
+    const parsed = createAvatarSchema.safeParse(req.body)
+
+    if(!parsed.success){
+        return res.status(400).json({
+            message: "Validation failed",
+            errors: parsed.error
+        })
+    }
+
+    try{
+        const avatar = await client.avatar.create({
+            data:{
+                name: parsed.data.name,
+                imageUrl: parsed.data.imageUrl
+            }
+        })
+
+        return res.status(200).json({
+            avatarId: avatar.id
+        })
+    }
+    catch(e)
+    {
+        return res.status(500).json({
+            message: "Internal Server error"
         })
     }
 }
