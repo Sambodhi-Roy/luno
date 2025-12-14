@@ -1,11 +1,13 @@
 import { Router } from "express";
+import { authenticateAdmin } from "../../middleware/adminAuth.middleware.js";
+import { createAvatar, createElement, createMap, updateElement } from "../../controllers/admin.controller.js";
 
 export const adminRouter = Router();
 
-adminRouter.post("/element", (req, res) => {});
+adminRouter.post("/element", authenticateAdmin, createElement);
 
-adminRouter.put("/element/:elementId", (req, res) => {});
+adminRouter.put("/element/:elementId", authenticateAdmin, updateElement);
 
-adminRouter.post("/avatar", (req, res) => {});
+adminRouter.post("/avatar", authenticateAdmin, createAvatar);
 
-adminRouter.post("/map", (req, res) => {});
+adminRouter.post("/map", authenticateAdmin, createMap);
