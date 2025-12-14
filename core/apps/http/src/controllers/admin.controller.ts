@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
-import { createAvatarSchema, createElementSchema, updateElementSchema } from "../types/index.js";
+import { createAvatarSchema, createElementSchema, createMapSchema, updateElementSchema } from "../types/index.js";
 import { parse } from "dotenv";
 
 export const createElement = async(req:Request, res: Response) => {

@@ -45,6 +45,7 @@ export const createAvatarSchema = z.object({
 });
 
 export const createMapSchema = z.object({
+  name: z.string().min(3),
   thumbnail: z.string(),
   dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/),
   defaultElements: z.array(
