@@ -1,15 +1,17 @@
-const client = require("./axios.client");
+const axios = require("./axios.client");
 
-function createAvatar(
-  token,
-  name = "TestAvatar",
-  imageUrl = "https://example.com/a.png"
-) {
-  return client.post(
+async function createAvatar(token, name, imageUrl) {
+  return axios.post(
     "/admin/avatar",
     { name, imageUrl },
-    { headers: { authorization: `Bearer ${token}` } }
+    {
+      headers: {
+        Authorization: `Bearer ${token}`, 
+      },
+    }
   );
 }
 
-module.exports = { createAvatar };
+module.exports = {
+  createAvatar,
+};
