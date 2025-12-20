@@ -188,7 +188,11 @@ export const updateUserMetadata = async (req: Request, res: Response) => {
   }
 
   const { avatarId } = parsedData.data;
-  const userId = (req as any).userId;
+  const userId = req.user?.id;
+
+  if (typeof userId !== "string") {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
 
   try {
     const avatar = await client.avatar.findUnique({
