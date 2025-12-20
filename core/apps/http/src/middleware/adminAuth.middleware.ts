@@ -16,7 +16,16 @@ interface JwtPayload{
 }
 
 export const authenticateAdmin = async(req: Request, res: Response, next: NextFunction) => {
-    const token = req.cookies?.token
+    let token = req.cookies?.token
+
+    if(!token && req.headers.authorization)
+    {
+        const [type,value] = req.headers.authorization.split(" ")
+        if(type==="Bearer")
+        {
+            token = value;
+        }
+    }
 
     if(!token){
         return res.status(401).json({

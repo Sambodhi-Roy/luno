@@ -18,8 +18,16 @@ export const authenticateUser = (
   res: Response,
   next: NextFunction
 ) => {
-  console.log("Hi");
-  const token = req.cookies?.token;
+  let token = req.cookies?.token;
+
+  if(!token && req.headers.authorization)
+  {
+    const [type,value] = req.headers.authorization.split(" ");
+    if(type === "Bearer")
+    {
+      token = value;
+    }
+  }
 
   if (!token) {
     return res.status(401).json({

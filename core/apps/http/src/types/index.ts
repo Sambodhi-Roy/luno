@@ -3,6 +3,7 @@ import { z } from "zod";
 export const SignupSchema = z.object({
   username: z.string().trim().min(1, "Username is required"),
   password: z.string().min(8),
+  role: z.enum(["User", "Admin"]).optional(),
 });
 
 export const SigninSchema = z.object({

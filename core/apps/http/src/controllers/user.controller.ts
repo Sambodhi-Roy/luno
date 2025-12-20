@@ -7,8 +7,6 @@ import {
 } from "../types/index.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
-import { parse } from "dotenv";
-import { date, json } from "zod";
 
 const getJWTSecret = () => {
   const secret = process.env.JWT_SECRET;
@@ -18,16 +16,16 @@ const getJWTSecret = () => {
   return secret;
 };
 
+/* ===================== SIGNUP ===================== */
 export const signup = async (req: Request, res: Response) => {
   const parsedData = SignupSchema.safeParse(req.body);
+
   if (!parsedData.success) {
     console.log("Parsed Data incorrect");
-    return res.status(400).json({
-      message: "Validation failed",
-    });
+    return res.status(400).json({ message: "Validation failed" });
   }
 
-  const { username, password } = parsedData.data;
+  const { username, password, role } = parsedData.data;
 
   try {
     const existingUser = await client.user.findUnique({
@@ -43,36 +41,34 @@ export const signup = async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     let avatarToUse: string | null = null;
-
     const avatars = await client.avatar.findMany();
-    if (avatars.length > 0) {
-      const randomIndex = Math.floor(Math.random() * avatars.length);
-      const randomAvatar = avatars[randomIndex];
 
-      if (randomAvatar) {
-        avatarToUse = randomAvatar.id;
-      }
+    if (avatars.length > 0) {
+      avatarToUse = avatars[Math.floor(Math.random() * avatars.length)]?.id ?? null;
     } else {
       console.log("No avatar found in database, User will have no avatar yet");
     }
 
     const newUser = await client.user.create({
       data: {
-        username: username,
+        username,
         password: hashedPassword,
-        role: "User",
+        role: role ?? "User",
         ...(avatarToUse && {
-          avatar: {
-            connect: { id: avatarToUse },
-          },
+          avatar: { connect: { id: avatarToUse } },
         }),
       },
     });
 
-    // Generating JWT token
-    const token = jwt.sign({ userid: newUser.id }, getJWTSecret(), {
-      expiresIn: "7d",
-    });
+    /* ✅ FIX: include role + consistent userId */
+    const token = jwt.sign(
+      {
+        userId: newUser.id,
+        role: newUser.role,
+      },
+      getJWTSecret(),
+      { expiresIn: "7d" }
+    );
 
     res.cookie("token", token, {
       httpOnly: true,
@@ -81,7 +77,7 @@ export const signup = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "User created successfully",
       user: {
         id: newUser.id,
@@ -90,19 +86,18 @@ export const signup = async (req: Request, res: Response) => {
       },
     });
   } catch (e) {
-    console.log("Error detected: ", e);
-    res.status(500).json({ message: "Internal server error" });
+    console.error(e);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
 
+/* ===================== SIGNIN ===================== */
 export const signin = async (req: Request, res: Response) => {
   const parsedData = SigninSchema.safeParse(req.body);
 
   if (!parsedData.success) {
     console.log("Parsed Data incorrect");
-    return res.status(400).json({
-      message: "Validation failed",
-    });
+    return res.status(400).json({ message: "Validation failed" });
   }
 
   const { username, password } = parsedData.data;
@@ -125,9 +120,15 @@ export const signin = async (req: Request, res: Response) => {
       });
     }
 
-    const token = jwt.sign({ userId: user.id }, getJWTSecret(), {
-      expiresIn: "7d",
-    });
+    /* ✅ FIX: include role + consistent userId */
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        role: user.role,
+      },
+      getJWTSecret(),
+      { expiresIn: "7d" }
+    );
 
     res.cookie("token", token, {
       httpOnly: true,
@@ -141,14 +142,15 @@ export const signin = async (req: Request, res: Response) => {
       token,
     });
   } catch (e) {
-    console.log("Error detected", e);
-    res.status(500).json({
+    console.error(e);
+    return res.status(500).json({
       message: "Internal Server Error",
     });
   }
 };
 
-export const getAvatars = async (req: Request, res: Response) => {
+/* ===================== AVATARS ===================== */
+export const getAvatars = async (_req: Request, res: Response) => {
   try {
     const avatars = await client.avatar.findMany({
       select: {
@@ -156,9 +158,7 @@ export const getAvatars = async (req: Request, res: Response) => {
         name: true,
         imageUrl: true,
       },
-      orderBy: {
-        name: "asc",
-      },
+      orderBy: { name: "asc" },
     });
 
     if (avatars.length === 0) {
@@ -172,28 +172,23 @@ export const getAvatars = async (req: Request, res: Response) => {
       avatars,
     });
   } catch (e) {
-    console.log("Error detected", e);
+    console.error(e);
     return res.status(500).json({
       message: "Internal Server Error",
     });
   }
 };
 
+/* ===================== METADATA ===================== */
 export const updateUserMetadata = async (req: Request, res: Response) => {
   const parsedData = updateMetadataSchema.safeParse(req.body);
 
   if (!parsedData.success) {
-    return res.status(400).json({
-      message: "Validation failed",
-    });
+    return res.status(400).json({ message: "Validation failed" });
   }
 
   const { avatarId } = parsedData.data;
-
-  const userId = (req as any).userId; // From middleware
-  // export interface AuthRequest extends Request{
-  // user? SomethingJWT
-  // }
+  const userId = (req as any).userId;
 
   try {
     const avatar = await client.avatar.findUnique({
@@ -201,28 +196,26 @@ export const updateUserMetadata = async (req: Request, res: Response) => {
     });
 
     if (!avatar) {
-      return res.status(400).json({
-        message: "Avatar not found",
-      });
+      return res.status(400).json({ message: "Avatar not found" });
     }
 
-    const updateUser = await client.user.update({
+    await client.user.update({
       where: { id: userId },
       data: { avatarId },
-      select: { id: true, username: true, avatarId: true },
     });
 
     return res.status(200).json({
       message: "User metadata updated successfully",
     });
   } catch (e) {
-    console.log("Error detected: ", e);
+    console.error(e);
     return res.status(500).json({
       message: "Internal Server Error",
     });
   }
 };
 
+/* ===================== BULK METADATA ===================== */
 export const getBulkUserMetadata = async (req: Request, res: Response) => {
   const idsParam = req.query.ids as string | undefined;
 
@@ -233,56 +226,38 @@ export const getBulkUserMetadata = async (req: Request, res: Response) => {
   }
 
   let userIds: string[];
+
   try {
-    try {
-      if (idsParam.startsWith("[")) {
-        userIds = JSON.parse(idsParam);
-      } else {
-        userIds = idsParam.split(",");
-      }
-    } catch (e) {
-      console.log(
-        "Invalid 'ids' format. Expected array or comma-separated list"
-      );
-      return res.status(400).json({
-        message: "Incorrect 'ids' format error",
-      });
-    }
+    userIds = idsParam.startsWith("[")
+      ? JSON.parse(idsParam)
+      : idsParam.split(",");
+  } catch {
+    return res.status(400).json({
+      message: "Incorrect 'ids' format error",
+    });
+  }
 
-    if (userIds.length === 0) {
-      return res.status(400).json({
-        message: "No user ids provided",
-      });
-    }
+  if (userIds.length === 0) {
+    return res.status(400).json({ message: "No user ids provided" });
+  }
 
+  try {
     const users = await client.user.findMany({
-      where: {
-        id: { in: userIds },
-      },
+      where: { id: { in: userIds } },
       select: {
         id: true,
-        avatar: {
-          select: {
-            imageUrl: true,
-          },
-        },
+        avatar: { select: { imageUrl: true } },
       },
     });
 
-    if (users.length === 0) {
-      return res.status(404).json({
-        message: "No users found with the given ids",
-      });
-    }
-
-    const avatars = users.map((user) => ({
-      userId: user.id,
-      imageUrl: user.avatar?.imageUrl ?? null,
-    }));
-
-    return res.status(200).json({ avatars });
+    return res.status(200).json({
+      avatars: users.map((u) => ({
+        userId: u.id,
+        imageUrl: u.avatar?.imageUrl ?? null,
+      })),
+    });
   } catch (e) {
-    console.log("Error detected: ", e);
+    console.error(e);
     return res.status(500).json({
       message: "Internal Server Error",
     });
