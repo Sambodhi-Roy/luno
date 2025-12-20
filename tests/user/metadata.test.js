@@ -34,6 +34,6 @@ describe("User Metadata Endpoints", () => {
     // call axios directly to not pass auth header
     const client = require("../_helpers/axios.client");
     const res = await client.post("/user/metadata", { avatarId });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 });
