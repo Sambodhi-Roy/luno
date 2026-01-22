@@ -95,5 +95,33 @@ export class WorldScene extends Phaser.Scene {
       frameRate:1,
       repeat: -1,
     })
+
+    anims.create({
+      key: "walk-right",
+      frames: anims.generateFrameNumbers("adam",{start:48,end:53}),
+      frameRate: 10,
+      repeat: 0,
+    })
+
+    anims.create({
+      key: "walk-up",
+      frames: anims.generateFrameNumbers("adam",{start:54,end:59}),
+      frameRate: 10,
+      repeat: 0,
+    })
+
+    anims.create({
+      key: "walk-left",
+      frames: anims.generateFrameNumbers("adam",{start:60,end:65}),
+      frameRate: 10,
+      repeat: 0,
+    })
+
+    anims.create({
+      key: "walk-down",
+      frames: anims.generateFrameNumbers("adam",{start:66,end:71}),
+      frameRate: 10,
+      repeat: 0,
+    })
   }
 }

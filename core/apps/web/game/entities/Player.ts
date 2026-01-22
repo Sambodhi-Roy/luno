@@ -66,7 +66,7 @@ export class Player{
             this.sprite.play(`walk-${this.direction}`, true)
         }
         else{
-            this.sprite.play(`walk-${this.direction}`, true)
+            this.sprite.play(`idle-${this.direction}`, true)
         }
     }
 }
