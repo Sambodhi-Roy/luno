@@ -12,6 +12,10 @@ export class Player{
         down: Phaser.Input.Keyboard.Key;
         left: Phaser.Input.Keyboard.Key;
         right: Phaser.Input.Keyboard.Key; 
+        up2: Phaser.Input.Keyboard.Key;
+        down2: Phaser.Input.Keyboard.Key;
+        left2: Phaser.Input.Keyboard.Key;
+        right2: Phaser.Input.Keyboard.Key;
     };
 
     scene: Phaser.Scene;
@@ -24,10 +28,15 @@ export class Player{
         this.sprite.setScale(2) //16px -> 32px
 
         this.keys = scene.input.keyboard!.addKeys({
-            up: "W",
-            down: "S",
-            left: "A",
-            right: "D",
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D,
+
+            up2: Phaser.Input.Keyboard.KeyCodes.UP,
+            down2: Phaser.Input.Keyboard.KeyCodes.DOWN,
+            left2: Phaser.Input.Keyboard.KeyCodes.LEFT,
+            right2: Phaser.Input.Keyboard.KeyCodes.RIGHT,
         }) as any;
 
         // Start with idle down
@@ -38,18 +47,23 @@ export class Player{
         let vx = 0;
         let vy = 0;
 
-        if(this.keys.left.isDown){
+        const left = this.keys.left.isDown || this.keys.left2.isDown
+        const right = this.keys.right.isDown || this.keys.right2.isDown
+        const up = this.keys.up.isDown || this.keys.up2.isDown
+        const down = this.keys.down.isDown || this.keys.down2.isDown
+
+        if(left){
             vx = -1;
             this.direction = "left"
-        }else if(this.keys.right.isDown){
+        }else if(right){
             vx = 1
             this.direction = "right"
         }
 
-        if(this.keys.up.isDown){
+        if(up){
             vy = -1
             this.direction = "up"
-        }else if (this.keys.down.isDown){
+        }else if (down){
             vy = 1
             this.direction = "down"
         }
