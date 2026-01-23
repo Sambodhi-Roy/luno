@@ -10,11 +10,16 @@ export async function createGame(container: HTMLElement) {
     backgroundColor: "#2d2d2d",
     pixelArt: true,
     scene: [WorldScene],
-
     scale: {
       mode: Phaser.Scale.RESIZE,          
       autoCenter: Phaser.Scale.CENTER_BOTH, 
     },
+    physics:{
+      default: "arcade",
+      arcade:{
+        debug: false,
+      },
+    }
   });
 
   return game;

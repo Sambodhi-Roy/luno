@@ -40,24 +40,31 @@ export class WorldScene extends Phaser.Scene {
     }
 
     map.createLayer("Ground", [roomBuilder, interiors], 0, 0);
-    map.createLayer("Walls", [roomBuilder, interiors], 0, 0);
-    map.createLayer("Objects", [roomBuilder, interiors], 0, 0);
+    const wallsLayer = map.createLayer("Walls", [roomBuilder, interiors], 0, 0);
+    const objectsLayer = map.createLayer("Objects", [roomBuilder, interiors], 0, 0);
 
-    const collisionLayer = map.createLayer("Collision", [roomBuilder, interiors], 0, 0);
-    collisionLayer?.setVisible(false);
+    wallsLayer?.setCollisionByProperty({collides: true})
+    objectsLayer?.setCollisionByProperty({
+      collides: true
+    })
 
+    
     this.createAnimations();
-
+    
     this.player = new Player(this, map.widthInPixels/2, map.heightInPixels/2);
-
+    
     const cam = this.cameras.main;
-
+    
     cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-
+    
     cam.centerOn(
-    map.widthInPixels / 2,
-    map.heightInPixels / 2
+      map.widthInPixels / 2,
+      map.heightInPixels / 2
     );
+    
+    this.physics.add.collider(this.player.sprite, wallsLayer!)
+
+    this.physics.add.collider(this.player.sprite, objectsLayer!)
   }
 
   update(_:number, delta: number){

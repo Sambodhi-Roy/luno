@@ -3,7 +3,7 @@ import * as Phaser from "phaser"
 export type Direction = "up" | "down" | "left" | "right";
 
 export class Player{
-    sprite: Phaser.GameObjects.Sprite;
+    sprite: Phaser.Physics.Arcade.Sprite;
     speed = 120;
     direction: Direction = "down";
 
@@ -24,8 +24,11 @@ export class Player{
         this.scene = scene
 
         // Creating the sprite
-        this.sprite = scene.add.sprite(x,y,"adam");
+        this.sprite = scene.physics.add.sprite(x,y,"adam");
         this.sprite.setScale(2) //16px -> 32px
+
+        this.sprite.body?.setSize(10,10)
+        this.sprite.body?.setOffset(3,20)
 
         this.keys = scene.input.keyboard!.addKeys({
             up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -46,6 +49,8 @@ export class Player{
     update(dt:number){
         let vx = 0;
         let vy = 0;
+
+        this.sprite.setVelocity(0, 0);
 
         const left = this.keys.left.isDown || this.keys.left2.isDown
         const right = this.keys.right.isDown || this.keys.right2.isDown
@@ -74,8 +79,7 @@ export class Player{
             vx /= len
             vy /=len
 
-            this.sprite.x += vx * this.speed*dt
-            this.sprite.y += vy * this.speed*dt
+            this.sprite.setVelocity(vx * this.speed, vy * this.speed);
 
             this.sprite.play(`walk-${this.direction}`, true)
         }
