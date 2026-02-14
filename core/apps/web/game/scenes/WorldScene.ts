@@ -1,0 +1,154 @@
+import * as Phaser from "phaser";
+import { Player } from "../entities/Player";
+
+export class WorldScene extends Phaser.Scene {
+  player!: Player;
+
+  constructor() {
+    super("WorldScene");
+    console.log("WorldScene constructor");
+  }
+
+  preload() {
+    console.log("WorldScene preload()");
+    this.load.tilemapTiledJSON("map", "/assets/maps/sample-map.tmj");
+    this.load.image(
+      "Room_Builder_free_32x32",
+      "/assets/tilesets/Room_Builder_free_32x32.png",
+    );
+
+    this.load.image(
+      "Interiors_free_32x32",
+      "/assets/tilesets/Interiors_free_32x32.png",
+    );
+
+    this.load.spritesheet("adam", "/assets/characters/adam.png", {
+      frameWidth: 16,
+      frameHeight: 32,
+    });
+  }
+
+  create() {
+    console.log("WorldScene create()");
+
+    const map = this.make.tilemap({ key: "map" });
+
+    const roomBuilder = map.addTilesetImage(
+      "Sample2",
+      "Room_Builder_free_32x32",
+    );
+    const interiors = map.addTilesetImage("Sample", "Interiors_free_32x32");
+
+    if (!roomBuilder || !interiors) {
+      throw new Error("Tilesets not found. Check tileset names in Tiled.");
+    }
+
+    map.createLayer("Ground", [roomBuilder, interiors], 0, 0);
+    const wallsLayer = map.createLayer("Walls", [roomBuilder, interiors], 0, 0);
+    const objectsLayer = map.createLayer(
+      "Objects",
+      [roomBuilder, interiors],
+      0,
+      0,
+    );
+
+    wallsLayer?.setCollisionByProperty({ collides: true });
+    objectsLayer?.setCollisionByProperty({
+      collides: true,
+    });
+
+    this.createAnimations();
+
+    this.player = new Player(
+      this,
+      map.widthInPixels / 2,
+      map.heightInPixels / 2,
+    );
+
+    const cam = this.cameras.main;
+
+    cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+
+    cam.setZoom(0.5);
+
+    cam.startFollow(this.player.sprite, true, 0.1, 0.1);
+
+    // cam.centerOn(
+    //   map.widthInPixels / 2,
+    //   map.heightInPixels / 2
+    // );
+
+    this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+
+    this.player.sprite.setCollideWorldBounds(true);
+
+    this.physics.add.collider(this.player.sprite, wallsLayer!);
+
+    this.physics.add.collider(this.player.sprite, objectsLayer!);
+  }
+
+  update(_: number, delta: number) {
+    const dt = delta / 1000;
+    this.player.update(dt);
+  }
+
+  private createAnimations() {
+    const anims = this.anims;
+
+    anims.create({
+      key: "idle-right",
+      frames: [{ key: "adam", frame: 0 }],
+      frameRate: 1,
+      repeat: -1,
+    });
+
+    anims.create({
+      key: "idle-up",
+      frames: [{ key: "adam", frame: 1 }],
+      frameRate: 1,
+      repeat: -1,
+    });
+
+    anims.create({
+      key: "idle-left",
+      frames: [{ key: "adam", frame: 2 }],
+      frameRate: 1,
+      repeat: -1,
+    });
+
+    anims.create({
+      key: "idle-down",
+      frames: [{ key: "adam", frame: 3 }],
+      frameRate: 1,
+      repeat: -1,
+    });
+
+    anims.create({
+      key: "walk-right",
+      frames: anims.generateFrameNumbers("adam", { start: 48, end: 53 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+
+    anims.create({
+      key: "walk-up",
+      frames: anims.generateFrameNumbers("adam", { start: 54, end: 59 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+
+    anims.create({
+      key: "walk-left",
+      frames: anims.generateFrameNumbers("adam", { start: 60, end: 65 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+
+    anims.create({
+      key: "walk-down",
+      frames: anims.generateFrameNumbers("adam", { start: 66, end: 71 }),
+      frameRate: 10,
+      repeat: 0,
+    });
+  }
+}
