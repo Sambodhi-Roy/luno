@@ -11,8 +11,10 @@ export async function createGame(container: HTMLElement) {
     pixelArt: true,
     scene: [WorldScene],
     scale: {
-      mode: Phaser.Scale.RESIZE,          
-      autoCenter: Phaser.Scale.CENTER_BOTH, 
+      mode: Phaser.Scale.FIT,          
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: 1280,
+      height: 800, 
     },
     physics:{
       default: "arcade",
