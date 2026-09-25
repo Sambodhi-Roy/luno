@@ -1,8 +1,14 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
 import { createSpaceSchema, addElementSchema, deleteElementSchema } from "../types/index.js";
-import { parse } from "dotenv";
-import { Prisma } from "@repo/db/client";
+
+const parseDimensions = (dimensions: string) => {
+  const [widthStr, heightStr] = dimensions.split("x") as [string, string];
+  return {
+    width: parseInt(widthStr, 10),
+    height: parseInt(heightStr, 10),
+  };
+};
 
 export const createSpace = async (req: Request, res: Response) => {
   const parsedData = createSpaceSchema.safeParse(req.body);
@@ -15,10 +21,6 @@ export const createSpace = async (req: Request, res: Response) => {
 
   const { name, dimensions, mapId } = parsedData.data;
 
-  const [widthStr, heightStr] = dimensions.split("x") as [string, string];
-  const width = parseInt(widthStr, 10);
-  const height = parseInt(heightStr, 10);
-
   const creatorId = req.user?.id;
 
   if (!creatorId) {
@@ -26,21 +28,62 @@ export const createSpace = async (req: Request, res: Response) => {
       message: "Unauthorized",
     });
   }
+
   try {
-    const space = await client.space.create({
-      data: {
-        name,
-        width,
-        height,
-        creatorId,
-        ...(mapId && { mapId }),
-      },
+    const map = mapId
+      ? await client.map.findUnique({
+          where: { id: mapId },
+          include: { mapElements: true },
+        })
+      : null;
+
+    if (mapId && !map) {
+      return res.status(400).json({
+        message: "Invalid mapId",
+      });
+    }
+
+    // Explicit dimensions win; otherwise the space takes the map's size
+    const { width, height } = dimensions
+      ? parseDimensions(dimensions)
+      : { width: map!.width, height: map!.height };
+
+    const space = await client.$transaction(async (tx) => {
+      const createdSpace = await tx.space.create({
+        data: {
+          name,
+          width,
+          height,
+          creatorId,
+          ...(map && { mapId: map.id, thumbnail: map.thumbnail }),
+        },
+      });
+
+      // Each space gets its own editable copy of the map's default elements
+      const defaults = (map?.mapElements ?? []).filter(
+        (me) => me.x !== null && me.y !== null
+      );
+
+      if (defaults.length > 0) {
+        await tx.spaceElements.createMany({
+          data: defaults.map((me) => ({
+            spaceId: createdSpace.id,
+            elementId: me.elementId,
+            x: me.x!,
+            y: me.y!,
+          })),
+        });
+      }
+
+      return createdSpace;
     });
 
     return res.status(200).json({
       message: "Space created successfully",
+      spaceId: space.id,
     });
   } catch (e) {
+    console.error(e);
     return res.status(500).json({
       message: "Internal Server Error",
     });
@@ -57,15 +100,7 @@ export const getAllSpaces = async (req: Request, res: Response) => {
   }
 
   try {
-    const spaces: Prisma.SpaceGetPayload<{
-      select: {
-        id: true;
-        name: true;
-        width: true;
-        height: true;
-        thumbnail: true;
-      };
-    }>[] = await client.space.findMany({
+    const spaces = await client.space.findMany({
       where: { creatorId },
       select: {
         id: true,
@@ -73,6 +108,7 @@ export const getAllSpaces = async (req: Request, res: Response) => {
         width: true,
         height: true,
         thumbnail: true,
+        mapId: true,
       },
     });
 
@@ -81,6 +117,7 @@ export const getAllSpaces = async (req: Request, res: Response) => {
       name: space.name,
       dimensions: `${space.width}x${space.height}`,
       thumbnail: space.thumbnail ?? null,
+      mapId: space.mapId ?? null,
     }));
 
     return res.status(200).json({ spaces: formattedSpaces });
@@ -91,15 +128,9 @@ export const getAllSpaces = async (req: Request, res: Response) => {
   }
 };
 
+// Any signed-in user can view a space, since spaces are joinable
 export const getSpace = async (req: Request, res: Response) => {
-  const creatorId = req.user?.id;
-  const spaceId = req.params;
-
-  if (!creatorId) {
-    return res.status(401).json({
-      message: "Unauthorized",
-    });
-  }
+  const { spaceId } = req.params;
 
   if (!spaceId) {
     return res.status(400).json({
@@ -108,12 +139,10 @@ export const getSpace = async (req: Request, res: Response) => {
   }
 
   try {
-    const space = await client.space.findFirst({
-      where: {
-        id: spaceId,
-        creatorId,
-      },
+    const space = await client.space.findUnique({
+      where: { id: spaceId },
       include: {
+        map: { select: { tmjUrl: true } },
         elements: {
           include: {
             element: true,
@@ -127,8 +156,6 @@ export const getSpace = async (req: Request, res: Response) => {
         message: "Space not found",
       });
     }
-
-    const dimensions = `${space.width}x${space.height ?? 0}`;
 
     const elements = space.elements.map((se) => ({
       id: se.id,
@@ -144,7 +171,12 @@ export const getSpace = async (req: Request, res: Response) => {
     }));
 
     return res.status(200).json({
-      dimensions,
+      id: space.id,
+      name: space.name,
+      dimensions: `${space.width}x${space.height}`,
+      mapId: space.mapId ?? null,
+      tmjUrl: space.map?.tmjUrl ?? null,
+      creatorId: space.creatorId,
       elements,
     });
   } catch (e) {
@@ -155,12 +187,12 @@ export const getSpace = async (req: Request, res: Response) => {
 };
 
 export const deleteSpace = async (req: Request, res: Response) => {
-  const creatorId = req.user?.id;
+  const userId = req.user?.id;
   const { spaceId } = req.params;
 
-  if (!creatorId) {
+  if (!userId) {
     return res.status(401).json({
-      messgae: "Unauthorised",
+      message: "Unauthorized",
     });
   }
 
@@ -171,26 +203,24 @@ export const deleteSpace = async (req: Request, res: Response) => {
   }
 
   try {
-    const space = await client.space.findFirst({
-      where: {
-        id: spaceId,
-        creatorId,
-      },
-      include: {
-        elements: true,
-      },
+    const space = await client.space.findUnique({
+      where: { id: spaceId },
+      select: { creatorId: true },
     });
 
     if (!space) {
       return res.status(404).json({
-        message: "SpaceId not found, Invalid SpaceId",
+        message: "Space not found",
       });
     }
 
-    await client.spaceElements.deleteMany({
-      where: { spaceId },
-    });
+    if (space.creatorId !== userId) {
+      return res.status(403).json({
+        message: "You do not have permission to delete this space",
+      });
+    }
 
+    // spaceElements are removed by the onDelete: Cascade relation
     await client.space.delete({
       where: { id: spaceId },
     });
@@ -206,14 +236,6 @@ export const deleteSpace = async (req: Request, res: Response) => {
 };
 
 export const getAllElements = async (req: Request, res: Response) => {
-  const userId = req.user?.id;
-
-  if (!userId) {
-    res.status(401).json({
-      message: "Unauthorised",
-    });
-  }
-
   try {
     const elements = await client.element.findMany({
       select: {
@@ -229,140 +251,138 @@ export const getAllElements = async (req: Request, res: Response) => {
       elements,
     });
   } catch (e) {
-    console.log("Error fetching elements");
-    res.status(500).json({
+    console.error("Error fetching elements", e);
+    return res.status(500).json({
       message: "Internal Server Error",
     });
   }
 };
 
-export const addElementToSpace = async (req:Request, res:Response) => {
-  const userId = req.user?.id
-  if(!userId)
-  {
+export const addElementToSpace = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) {
     return res.status(401).json({
-      message: "Unauthorised"
-    })
+      message: "Unauthorized",
+    });
   }
 
-  const parsed = addElementSchema.safeParse(req.body)
-  if(!parsed.success)
-  {
+  const parsed = addElementSchema.safeParse(req.body);
+  if (!parsed.success) {
     return res.status(400).json({
       message: "Validation failed",
-      errors: parsed.error
-    })
+      errors: parsed.error,
+    });
   }
 
-  const {spaceId, elementId, x, y} = parsed.data;
+  const { spaceId, elementId, x, y } = parsed.data;
 
-  try{
-    const space = await client.space.findFirst({
-      where: {
-        id: spaceId,
-        creatorId: userId
-      }
+  try {
+    const space = await client.space.findUnique({
+      where: { id: spaceId },
     });
 
-    if(!space){
-      return res.status(400).json({
-        message: "Invalid spaceId or access denied"
-      })
+    if (!space) {
+      return res.status(404).json({
+        message: "Space not found",
+      });
+    }
+
+    if (space.creatorId !== userId) {
+      return res.status(403).json({
+        message: "You do not have permission to modify this space",
+      });
     }
 
     const element = await client.element.findUnique({
-      where: {
-        id: elementId,
-      }
-    })
+      where: { id: elementId },
+    });
 
-    if(!element)
-    {
+    if (!element) {
+      return res.status(404).json({
+        message: "Element not found",
+      });
+    }
+
+    // The whole element footprint must fit inside the space
+    if (x + element.width > space.width || y + element.height > space.height) {
       return res.status(400).json({
-        message: "Invalid elementId"
-      })
+        message: "Element lies outside the space boundary",
+      });
     }
 
     const spaceElement = await client.spaceElements.create({
-      data:{
+      data: {
         spaceId,
         elementId,
         x,
         y,
-      }
-    })
+      },
+    });
 
     return res.status(200).json({
       message: "Element added to space successfully",
-      element:{
+      element: {
         id: spaceElement.id,
         elementId,
         x,
-        y
-      }
-    })
-  }
-  catch(e)
-  {
+        y,
+      },
+    });
+  } catch (e) {
     return res.status(500).json({
-      message: "Internal Server Error"
-    })
+      message: "Internal Server Error",
+    });
   }
-}
+};
 
-export const removeElementFromSpace = async(req:Request, res:Response)=>{
-  const userId = req.user?.id
-  if(!userId){
+export const removeElementFromSpace = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) {
     return res.status(401).json({
-      message: "Unauthorized"
-    })
+      message: "Unauthorized",
+    });
   }
 
-  const parsed = deleteElementSchema.safeParse(req.body)
+  const parsed = deleteElementSchema.safeParse(req.body);
 
-  if(!parsed.success)
-  {
+  if (!parsed.success) {
     return res.status(400).json({
-      message: "spaceElement id is required"
-    })
+      message: "spaceElement id is required",
+    });
   }
 
-  try{
-    const {id} = parsed.data;
+  try {
+    const { id } = parsed.data;
 
-    const spaceElement = await client.spaceElements.findFirst({
-      where: {id},
-      include:{
+    const spaceElement = await client.spaceElements.findUnique({
+      where: { id },
+      include: {
         space: true,
-      }
-    })
+      },
+    });
 
-    if(!spaceElement){
-      return res.status(400).json({
-        message: "Invalid element id"
-      })
+    if (!spaceElement) {
+      return res.status(404).json({
+        message: "Space element not found",
+      });
     }
 
-    if(spaceElement.space.creatorId !== userId){
-      return res.status(400).json({
+    if (spaceElement.space.creatorId !== userId) {
+      return res.status(403).json({
         message: "You do not have permission to modify this space",
-      })
+      });
     }
 
     await client.spaceElements.delete({
-      where: {
-        id
-      }
-    })
+      where: { id },
+    });
 
     return res.status(200).json({
-      message: "Element removed from space successfully"
-    })
-  }
-  catch(e)
-  {
+      message: "Element removed from space successfully",
+    });
+  } catch (e) {
     return res.status(500).json({
-      message: "Internal Server Error"
-    })
+      message: "Internal Server Error",
+    });
   }
-}
+};

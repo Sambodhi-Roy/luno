@@ -15,18 +15,22 @@ export const updateMetadataSchema = z.object({
   avatarId: z.string(),
 });
 
-export const createSpaceSchema = z.object({
-  name: z.string().min(3).max(30),
-  // Custom function to validate the dimensions
-  dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/),
-  mapId: z.string().optional(),
-});
+export const createSpaceSchema = z
+  .object({
+    name: z.string().min(3).max(30),
+    // "<width>x<height>" in tiles; defaults to the map's size when mapId is given
+    dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/).optional(),
+    mapId: z.string().optional(),
+  })
+  .refine((data) => data.dimensions || data.mapId, {
+    message: "Either dimensions or mapId is required",
+  });
 
 export const addElementSchema = z.object({
   spaceId: z.string(),
   elementId: z.string(),
-  x: z.number(),
-  y: z.number(),
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
 });
 
 export const createElementSchema = z.object({
@@ -48,6 +52,7 @@ export const createAvatarSchema = z.object({
 export const createMapSchema = z.object({
   name: z.string().min(3),
   thumbnail: z.string(),
+  tmjUrl: z.string().optional(),
   dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/),
   defaultElements: z.array(
     z.object({

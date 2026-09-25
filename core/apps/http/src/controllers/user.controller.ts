@@ -16,6 +16,9 @@ const getJWTSecret = () => {
   return secret;
 };
 
+// Self-signup as Admin is a dev/test convenience; keep it off in production
+const allowAdminSignup = () => process.env.ALLOW_ADMIN_SIGNUP === "true";
+
 /* ===================== SIGNUP ===================== */
 export const signup = async (req: Request, res: Response) => {
   const parsedData = SignupSchema.safeParse(req.body);
@@ -53,7 +56,7 @@ export const signup = async (req: Request, res: Response) => {
       data: {
         username,
         password: hashedPassword,
-        role: role ?? "User",
+        role: role === "Admin" && allowAdminSignup() ? "Admin" : "User",
         ...(avatarToUse && {
           avatar: { connect: { id: avatarToUse } },
         }),
@@ -79,6 +82,7 @@ export const signup = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: "User created successfully",
+      userId: newUser.id,
       user: {
         id: newUser.id,
         username: newUser.username,
@@ -160,12 +164,6 @@ export const getAvatars = async (_req: Request, res: Response) => {
       },
       orderBy: { name: "asc" },
     });
-
-    if (avatars.length === 0) {
-      return res.status(404).json({
-        message: "No avatars found in database",
-      });
-    }
 
     return res.status(200).json({
       message: "Avatars fetched successfully",

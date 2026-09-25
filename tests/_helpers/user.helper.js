@@ -13,9 +13,11 @@ function getAvatars() {
   return client.get("/user/avatars");
 }
 
-function getBulkMetadata(ids) {
+function getBulkMetadata(token, ids) {
   // server expects ?ids=[id1,id2] or comma-separated; we pass an array as JSON string
-  return client.get(`/user/metadata/bulk?ids=${JSON.stringify(ids)}`);
+  return client.get(`/user/metadata/bulk?ids=${JSON.stringify(ids)}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
 }
 
 module.exports = { updateMetadata, getAvatars, getBulkMetadata };
