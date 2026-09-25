@@ -28,6 +28,7 @@ async function createUser(role = "User") {
 
   return {
     username,
+    userId: signupRes.data.userId,
     token: signinRes.data.token,
   };
 }
@@ -37,6 +38,8 @@ async function createAdmin() {
 }
 
 module.exports = {
+  signup,
+  signin,
   createUser,
   createAdmin,
 };
