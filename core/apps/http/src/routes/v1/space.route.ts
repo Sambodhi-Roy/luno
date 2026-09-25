@@ -6,14 +6,15 @@ export const spaceRouter = Router();
 
 spaceRouter.post("/", authenticateUser, createSpace);
 
+// Static paths must be registered before "/:spaceId", otherwise e.g. "element" is captured as a spaceId
 spaceRouter.get("/all", authenticateUser, getAllSpaces);
 
-spaceRouter.get("/:spaceId", authenticateUser ,getSpace);
-
-spaceRouter.delete("/:spaceId", authenticateUser ,deleteSpace);
-
-spaceRouter.get("/elements", getAllElements);
+spaceRouter.get("/elements", authenticateUser, getAllElements);
 
 spaceRouter.post("/element", authenticateUser, addElementToSpace);
 
 spaceRouter.delete("/element", authenticateUser, removeElementFromSpace);
+
+spaceRouter.get("/:spaceId", authenticateUser ,getSpace);
+
+spaceRouter.delete("/:spaceId", authenticateUser ,deleteSpace);

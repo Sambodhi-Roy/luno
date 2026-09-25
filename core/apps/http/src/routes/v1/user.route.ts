@@ -1,7 +1,4 @@
 import { Router } from "express";
-import { SignupSchema } from "../../types/index.js";
-import client from "@repo/db/client";
-import { parse } from "zod";
 import {
   getAvatars,
   getBulkUserMetadata,

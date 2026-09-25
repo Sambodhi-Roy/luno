@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
 import { createAvatarSchema, createElementSchema, createMapSchema, updateElementSchema } from "../types/index.js";
-import { parse } from "dotenv";
 
 export const createElement = async(req:Request, res: Response) => {
     const parsed = createElementSchema.safeParse(req.body)
@@ -114,7 +113,7 @@ export const createMap = async (req: Request, res: Response) => {
     });
   }
 
-  const { thumbnail, dimensions, defaultElements, name } = parsed.data;
+  const { thumbnail, tmjUrl, dimensions, defaultElements, name } = parsed.data;
 
   const [widthStr, heightStr] = dimensions.split("x") as [string, string];
   const width = parseInt(widthStr, 10);
@@ -128,6 +127,7 @@ export const createMap = async (req: Request, res: Response) => {
           width,
           height,
           thumbnail,
+          ...(tmjUrl && { tmjUrl }),
         },
       });
 
