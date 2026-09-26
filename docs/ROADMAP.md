@@ -9,7 +9,7 @@ Luno is a 2D metaverse in the style of Gather and Zep. Users sign in, pick an av
 | Phase | Name | Status |
 |---|---|---|
 | 0 | Stabilise the foundation | ✅ Done |
-| 1 | Web app shell | ⬜ Not started |
+| 1 | Web app shell | ✅ Done |
 | 2 | Real-time multiplayer | ⬜ Not started |
 | 3 | Space building (place elements) | ⬜ Not started |
 | 4 | Social layer | ⬜ Not started |
@@ -52,15 +52,16 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 **Done when:** every HTTP integration test passes against the dev DB. ✅ 29/29 passing (`pnpm test:http`). The WS contract suite is in place for Phase 2.
 
 ### Phase 1: Web app shell
-- [ ] Pages: `/login`, `/signup`, `/dashboard` (my spaces, create a space from a map picker), `/space/[spaceId]`, avatar picker
-- [ ] API client and auth (cookie with `credentials: include`, CORS on `http`)
-- [ ] `WorldScene` receives `spaceId`, fetches the space, loads the map's `.tmj` dynamically, and renders `spaceElements`. Static elements collide.
-- [ ] Fix the `GameCanvas` mount race (StrictMode currently creates two Phaser games)
+- [x] Pages: `/login`, `/signup`, `/dashboard` (my spaces, create a space from a map picker), `/space/[spaceId]`, avatar picker
+- [x] API client and auth (cookie with `credentials: include`, CORS on `http`), plus `GET /user/me`, `POST /user/signout`, `GET /maps`
+- [x] `WorldScene` receives the space, loads the map's `.tmj` and tilesets dynamically, and renders `spaceElements`. Static elements collide on their bottom row.
+- [x] Fix the `GameCanvas` mount race (StrictMode currently creates two Phaser games)
+- [x] Seed script (`npx prisma db seed`): the "Office" map, 6 furniture elements, the "Adam" avatar
 
-**Done when:** a user can sign up, create a space from the sample map, open it, and walk around alone with elements loaded from the DB.
+**Done when:** a user can sign up, create a space from the sample map, open it, and walk around alone with elements loaded from the DB. ✅ Verified in headless Chrome, and 34/34 HTTP tests pass.
 
 ### Phase 2: Real-time multiplayer
-- [ ] `core/apps/ws`: Node with `ws` on :3001, a `RoomManager` (spaceId → users), and a `User` object per socket
+- [ ] `core/apps/ws`: Node with `ws` on :3002, a `RoomManager` (spaceId → users), and a `User` object per socket
 - [ ] Messages: `join` → `space-joined {spawn, users}`, `user-join`, `movement` / `movement-rejected`, `user-left`
 - [ ] Verify the JWT on join, and build the collision grid from the `.tmj` plus static elements
 - [ ] Client: `NetworkManager` and a `RemotePlayer` entity that interpolates moves
@@ -105,6 +106,6 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 ---
 
 ## Verification per phase
-- **Phases 0 and 2:** start `http` on :3000 (and `ws` on :3001 for Phase 2), then run `cd tests && pnpm test`.
+- **Phases 0 and 2:** start `http` on :3001 (and `ws` on :3002 for Phase 2), then run `cd tests && pnpm test`.
 - **Phases 1 and 3–5:** check manually with two browser windows (one normal, one incognito) as two users, following each phase's "Done when" line.
 - **Phase 7:** CI is green and the deployed URL works from a second device.
