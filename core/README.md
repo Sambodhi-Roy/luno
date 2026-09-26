@@ -4,9 +4,9 @@ This is the pnpm + Turborepo monorepo for Luno. Roadmap: [`../docs/ROADMAP.md`](
 
 | Path | What |
 |---|---|
-| `apps/http` | Express 5 REST API (:3000) |
-| `apps/ws` | WebSocket server (:3001), coming in Phase 2 |
-| `apps/web` | Next.js + Phaser client |
+| `apps/http` | Express 5 REST API (:3001) |
+| `apps/ws` | WebSocket server (:3002), coming in Phase 2 |
+| `apps/web` | Next.js + Phaser client (:3000) |
 | `packages/db` | Prisma 7 schema and client (`@repo/db/client`) |
 | `packages/ui` | Shared React components |
 
@@ -25,15 +25,21 @@ cp apps/http/.env.example apps/http/.env
 cd packages/db
 npx prisma migrate dev
 npx prisma generate
+npx prisma db seed    # starter map, furniture and avatar (safe to re-run)
 cd ../..
 pnpm --filter @repo/db build
-
-# API
-pnpm --filter http build
-cd apps/http && node dist/index.js
 ```
 
-Web client: `pnpm --filter web dev`, then open http://localhost:3000. If the API is already on :3000, Next picks the next free port.
+## Run
+
+```sh
+cp apps/web/.env.example apps/web/.env.local   # first time only
+pnpm dev    # web on :3000 + API on :3001 (reloads on save)
+```
+
+To run one at a time: `pnpm --filter http dev` or `pnpm --filter web dev`.
+
+The API allows the web origin through CORS. Set `WEB_ORIGIN` in `apps/http/.env` if the web app runs somewhere other than `http://localhost:3000`.
 
 ## Tests
 

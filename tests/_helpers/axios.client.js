@@ -1,7 +1,7 @@
 const axios = require("axios");
 
 const client = axios.create({
-  baseURL: "http://localhost:3000/api/v1",
+  baseURL: "http://localhost:3001/api/v1",
   validateStatus: () => true, // prevents axios rejecting non-2xx
   timeout: 10000,
 });
