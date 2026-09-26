@@ -1,26 +1,135 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Single source of truth for styling. Components use only these tokens and utilities:
+ * no hex colours, arbitrary [..] values or inline styles in TSX.
+ * Palette naming: `foreground` is the raised surface colour (cards, dialogs); text uses `copy`.
+ */
+@theme {
+  /* Drop Tailwind's default palette so only the colours below exist */
+  --color-*: initial;
+
+  --color-primary: #9147ff;
+  --color-primary-content: #ffffff;
+  --color-primary-dark: #7314ff;
+  --color-primary-light: #af7aff;
+
+  --color-secondary: #ff4759;
+  --color-secondary-content: #470007;
+  --color-secondary-dark: #ff142b;
+  --color-secondary-light: #ff7a87;
+
+  --color-background: #19191a;
+  --color-foreground: #262527;
+  --color-border: #3f3e41;
+
+  --color-copy: #fbfbfb;
+  --color-copy-light: #d9d8da;
+  --color-copy-lighter: #a5a4a8;
+
+  --color-success: #47ff47;
+  --color-warning: #ffff47;
+  --color-error: #ff4747;
+
+  --color-success-content: #004700;
+  --color-warning-content: #474700;
+  --color-error-content: #ffffff;
 }
 
+/* inline: next/font defines --font-geist-* on <body>, so resolve them where the utility is used, not on :root */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* Dialogs never grow past the viewport; their content scrolls instead */
+  --dialog-max-height: 90vh;
+  /* How much of the page shows through behind a dialog */
+  --overlay-opacity: 80%;
+  /* Strength of the subtle hover highlight on neutral surfaces */
+  --hover-tint: 6%;
+
+  /* Character sprite sheets (e.g. /assets/characters/adam.png) are 16x32 frames; frame 3 faces down */
+  --sprite-frame-w: 16px;
+  --sprite-frame-h: 32px;
+  --sprite-idle-frame: 3;
+}
+
+@layer base {
+  body {
+    @apply bg-background font-sans text-copy;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ---------- Buttons ---------- */
+
+@utility btn {
+  @apply rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-primary text-primary-content hover:bg-primary-dark;
+}
+
+@utility btn-ghost {
+  @apply btn hover-tint border border-border text-copy;
+}
+
+@utility btn-danger {
+  @apply btn border border-error text-error hover:bg-error hover:text-error-content;
+}
+
+/* ---------- Surfaces ---------- */
+
+@utility card {
+  @apply rounded-2xl border border-border bg-foreground;
+}
+
+@utility field {
+  @apply w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-copy outline-none placeholder:text-copy-lighter focus:border-primary;
+}
+
+@utility dialog-overlay {
+  background-color: color-mix(in srgb, var(--color-background) var(--overlay-opacity), transparent);
+}
+
+@utility dialog-panel {
+  @apply card w-full max-w-md overflow-y-auto p-6;
+  max-height: var(--dialog-max-height);
+}
+
+@utility hover-tint {
+  &:hover {
+    background-color: color-mix(in srgb, var(--color-copy) var(--hover-tint), transparent);
+  }
+}
+
+/* ---------- Pixel art ---------- */
+
+@utility pixelated {
+  image-rendering: pixelated;
+}
+
+/* Box sized to one sprite frame at --sprite-scale; the inner .avatar-sprite-frame shows the frame */
+@utility avatar-sprite {
+  --sprite-scale: 2;
+  width: calc(var(--sprite-frame-w) * var(--sprite-scale));
+  height: calc(var(--sprite-frame-h) * var(--sprite-scale));
+}
+
+@utility avatar-sprite-sm {
+  --sprite-scale: 1;
+}
+
+/* Expects --sprite-url (the only per-avatar value) to be set on the element */
+@utility avatar-sprite-frame {
+  @apply pixelated;
+  width: var(--sprite-frame-w);
+  height: var(--sprite-frame-h);
+  background-image: var(--sprite-url);
+  background-repeat: no-repeat;
+  background-position: calc(var(--sprite-idle-frame) * var(--sprite-frame-w) * -1) 0;
+  transform: scale(var(--sprite-scale));
+  transform-origin: top left;
 }

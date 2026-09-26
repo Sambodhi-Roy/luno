@@ -40,13 +40,13 @@ export class Player{
             down2: Phaser.Input.Keyboard.KeyCodes.DOWN,
             left2: Phaser.Input.Keyboard.KeyCodes.LEFT,
             right2: Phaser.Input.Keyboard.KeyCodes.RIGHT,
-        }) as any;
+        }) as Player["keys"];
 
         // Start with idle down
         this.sprite.play("idle-down")
     }
 
-    update(dt:number){
+    update(){
         let vx = 0;
         let vy = 0;
 
