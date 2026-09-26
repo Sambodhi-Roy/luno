@@ -4,7 +4,7 @@ const { createAdmin, createUser } = require("../_helpers/auth.helper");
 const { createSpace } = require("../_helpers/space.helper");
 const { waitForMessage } = require("../_helpers/ws.helper");
 
-const WS_URL = "ws://localhost:3001";
+const WS_URL = "ws://localhost:3002";
 
 jest.setTimeout(30000);
 

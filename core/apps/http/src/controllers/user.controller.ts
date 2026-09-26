@@ -16,6 +16,13 @@ const getJWTSecret = () => {
   return secret;
 };
 
+// clearCookie only removes the cookie when these match the options it was set with
+const authCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+});
+
 // Self-signup as Admin is a dev/test convenience; keep it off in production
 const allowAdminSignup = () => process.env.ALLOW_ADMIN_SIGNUP === "true";
 
@@ -74,9 +81,7 @@ export const signup = async (req: Request, res: Response) => {
     );
 
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      ...authCookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -135,9 +140,7 @@ export const signin = async (req: Request, res: Response) => {
     );
 
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      ...authCookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -150,6 +153,43 @@ export const signin = async (req: Request, res: Response) => {
     return res.status(500).json({
       message: "Internal Server Error",
     });
+  }
+};
+
+/* ===================== SIGNOUT ===================== */
+export const signout = (_req: Request, res: Response) => {
+  res.clearCookie("token", authCookieOptions());
+  return res.status(200).json({ message: "Signed out" });
+};
+
+/* ===================== ME ===================== */
+export const getMe = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const user = await client.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        avatar: { select: { id: true, name: true, imageUrl: true } },
+      },
+    });
+
+    // A valid token for a deleted user is treated as signed out
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    return res.status(200).json({ ...user, avatar: user.avatar ?? null });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
