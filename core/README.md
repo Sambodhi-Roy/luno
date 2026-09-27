@@ -5,9 +5,10 @@ This is the pnpm + Turborepo monorepo for Luno. Roadmap: [`../docs/ROADMAP.md`](
 | Path | What |
 |---|---|
 | `apps/http` | Express 5 REST API (:3001) |
-| `apps/ws` | WebSocket server (:3002), coming in Phase 2 |
+| `apps/ws` | WebSocket server for real-time multiplayer (:3002) |
 | `apps/web` | Next.js + Phaser client (:3000) |
 | `packages/db` | Prisma 7 schema and client (`@repo/db/client`) |
+| `packages/protocol` | WebSocket message types and shared movement rules (`@repo/protocol`) |
 | `packages/ui` | Shared React components |
 
 ## Setup
@@ -20,6 +21,7 @@ pnpm install
 # Environment: copy the examples and fill them in
 cp packages/db/.env.example packages/db/.env
 cp apps/http/.env.example apps/http/.env
+cp apps/ws/.env.example apps/ws/.env      # same DATABASE_URL and JWT_SECRET as http
 
 # Database
 cd packages/db
@@ -34,10 +36,10 @@ pnpm --filter @repo/db build
 
 ```sh
 cp apps/web/.env.example apps/web/.env.local   # first time only
-pnpm dev    # web on :3000 + API on :3001 (reloads on save)
+pnpm dev    # web :3000, API :3001, WebSocket :3002 (API and WS reload on save)
 ```
 
-To run one at a time: `pnpm --filter http dev` or `pnpm --filter web dev`.
+To run one at a time: `pnpm --filter web dev`, `pnpm --filter http dev` or `pnpm --filter ws-server dev`.
 
 The API allows the web origin through CORS. Set `WEB_ORIGIN` in `apps/http/.env` if the web app runs somewhere other than `http://localhost:3000`.
 
@@ -49,5 +51,5 @@ The integration tests live in `../tests` and run against the running servers:
 cd ../tests
 pnpm install
 pnpm test:http   # REST API suites
-pnpm test        # everything, including the WebSocket contract (Phase 2)
+pnpm test        # everything, including the WebSocket suite (needs apps/ws running)
 ```
