@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GameCanvas } from "@/components/GameCanvas";
+import type { ConnectionStatus } from "@/game";
 import { api, ApiError } from "@/lib/api";
 import type { SpaceDetail } from "@/lib/types";
 import { useMe } from "@/lib/useMe";
@@ -13,6 +14,8 @@ export default function SpacePage() {
   const { me } = useMe();
   const [space, setSpace] = useState<SpaceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<ConnectionStatus>({ state: "connecting" });
+  const [online, setOnline] = useState(0);
 
   useEffect(() => {
     if (!me) return;
@@ -25,7 +28,7 @@ export default function SpacePage() {
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-background">
-      {space && <GameCanvas space={space} />}
+      {space && me && <GameCanvas space={space} me={me} onStatus={setStatus} onPresence={setOnline} />}
 
       {!space && (
         <div className="flex h-full flex-col items-center justify-center gap-4 text-copy-lighter">
@@ -46,11 +49,37 @@ export default function SpacePage() {
           ← Back
         </Link>
         {space && (
-          <span className="rounded-lg bg-foreground px-3 py-2 text-sm font-medium">
-            {space.name}
-          </span>
+          <>
+            <span className="chip">{space.name}</span>
+            <StatusChip status={status} online={online} />
+          </>
         )}
       </div>
     </main>
+  );
+}
+
+function StatusChip({ status, online }: { status: ConnectionStatus; online: number }) {
+  if (status.state === "connected") {
+    return (
+      <span className="chip">
+        <span className="status-dot bg-success" />
+        {online} online
+      </span>
+    );
+  }
+  if (status.state === "closed") {
+    return (
+      <span className="chip text-error">
+        <span className="status-dot bg-error" />
+        {status.reason}
+      </span>
+    );
+  }
+  return (
+    <span className="chip text-copy-lighter">
+      <span className="status-dot bg-warning" />
+      {status.state === "connecting" ? "Connecting…" : "Reconnecting…"}
+    </span>
   );
 }

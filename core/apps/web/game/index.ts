@@ -1,10 +1,11 @@
 import * as Phaser from "phaser";
 import { themeColor } from "@/lib/theme";
-import type { SpaceDetail } from "@/lib/types";
-import { WorldScene } from "./scenes/WorldScene";
+import { WorldScene, type WorldSceneData } from "./scenes/WorldScene";
+
+export type { ConnectionStatus } from "./network/NetworkManager";
 
 // This module is only ever loaded through a dynamic import in GameCanvas, so Phaser never runs on the server
-export async function createGame(container: HTMLElement, space: SpaceDetail) {
+export async function createGame(container: HTMLElement, data: WorldSceneData) {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: container,
@@ -15,16 +16,10 @@ export async function createGame(container: HTMLElement, space: SpaceDetail) {
       width: "100%",
       height: "100%",
     },
-    physics: {
-      default: "arcade",
-      arcade: {
-        debug: false,
-      },
-    },
   });
 
-  // Added (not listed in the config) so the space can be passed in as scene data
-  game.scene.add("WorldScene", WorldScene, true, { space });
+  // Added (not listed in the config) so the space and callbacks can be passed in as scene data
+  game.scene.add("WorldScene", WorldScene, true, data);
 
   return game;
 }
