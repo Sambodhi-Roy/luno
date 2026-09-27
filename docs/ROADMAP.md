@@ -11,7 +11,7 @@ Luno is a 2D metaverse in the style of Gather and Zep. Users sign in, pick an av
 | 0 | Stabilise the foundation | ✅ Done |
 | 1 | Web app shell | ✅ Done |
 | 2 | Real-time multiplayer | ✅ Done |
-| 3 | Space building (place elements) | ⬜ Not started |
+| 3 | Space building (place elements) | ✅ Done |
 | 4 | Social layer | ⬜ Not started |
 | 5 | Proximity audio/video (LiveKit) | ⬜ Not started |
 | 6 | Customisable maps and interactive objects | ⬜ Not started |
@@ -71,11 +71,12 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 **Done when:** `tests/ws` passes and two browser tabs see each other move smoothly. ✅ 44/44 tests pass, and a two-player headless Chrome run sees join, movement and leave.
 
 ### Phase 3: Space building
-- [ ] Build mode for the space owner: element palette, ghost preview snapped to the grid, click to place, right-click to remove
-- [ ] Broadcast `element-added` / `element-removed` over WS, and refresh the server's collision grid
-- [ ] Admin page: upload Tiled maps and tilesets, create elements and avatars (local storage or S3/R2)
+- [x] Build mode for the space owner: furniture palette, see-through preview snapped to the grid (red outline when it doesn't fit), click to place, right-click to remove
+- [x] Live sync: after a change `apps/http` notifies `apps/ws` (internal endpoint, shared `INTERNAL_SECRET`), which updates the room's collision grid and broadcasts `element-added` / `element-removed`
+- [x] Admin page (`/admin`): upload furniture, avatars and Tiled maps (`.tmj` plus tilesets plus a thumbnail). Files are stored in `apps/web/public/uploads` for now.
+- [x] Tilesets live next to their `.tmj`, so any uploaded map renders without code changes
 
-**Done when:** the owner rearranges furniture live while a visitor watches it change and collides with it.
+**Done when:** the owner rearranges furniture live while a visitor watches it change and collides with it. ✅ 53/53 tests pass. Headless Chrome confirms owner/visitor live placement and removal, and an admin upload of furniture and a map that a new space then uses.
 
 ### Phase 4: Social layer
 - [ ] Text chat, both space-wide and proximity
