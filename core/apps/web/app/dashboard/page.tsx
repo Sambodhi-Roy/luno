@@ -60,6 +60,11 @@ export default function DashboardPage() {
             <AvatarSprite imageUrl={me.avatar?.imageUrl ?? null} size="sm" />
             <span className="text-sm">{me.username}</span>
           </button>
+          {me.role === "Admin" && (
+            <Link href="/admin" className="btn-ghost">
+              Admin
+            </Link>
+          )}
           <Button variant="ghost" onClick={signOut}>
             Sign out
           </Button>

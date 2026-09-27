@@ -1,12 +1,11 @@
 import * as Phaser from "phaser";
-import type { CollisionGrid } from "@repo/protocol/rules";
 import { Avatar } from "./Avatar";
 
 type Keys = Record<"up" | "down" | "left" | "right" | "up2" | "down2" | "left2" | "right2", Phaser.Input.Keyboard.Key>;
 
 /**
  * The player's own character: WASD / arrow keys step one tile at a time.
- * Steps are predicted locally with the shared collision grid and reported to the server, which can reject them.
+ * Steps are predicted locally with the shared collision rules and reported to the server, which can reject them.
  */
 export class LocalPlayer extends Avatar {
   private readonly keys: Keys;
@@ -16,7 +15,8 @@ export class LocalPlayer extends Avatar {
     tileX: number,
     tileY: number,
     name: string,
-    private readonly grid: CollisionGrid,
+    // Asked on every step, so furniture placed or removed later is respected
+    private readonly canEnter: (tileX: number, tileY: number) => boolean,
     private readonly onStep: (tileX: number, tileY: number) => void
   ) {
     super(scene, tileX, tileY, name);
@@ -46,7 +46,7 @@ export class LocalPlayer extends Avatar {
     const x = this.tileX + dx;
     const y = this.tileY + dy;
 
-    if (!this.grid.isWalkable(x, y)) {
+    if (!this.canEnter(x, y)) {
       // Blocked: turn to face it, like bumping into a wall
       this.face(dx, dy);
       return this.idle();
