@@ -1,5 +1,5 @@
 import client from "@repo/db/client";
-import { buildCollisionGrid, type PlacedElement } from "@repo/protocol";
+import type { InternalEvent, PlacedElement } from "@repo/protocol";
 import { loadTiledMap } from "./assets.js";
 import { Room } from "./Room.js";
 
@@ -7,7 +7,7 @@ type SpaceRow = {
   width: number;
   height: number;
   tmjUrl: string | null;
-  elements: PlacedElement[];
+  elements: (PlacedElement & { id: string })[];
 };
 
 /** Loads a space into memory on first join and drops it when the last person leaves. */
@@ -38,13 +38,26 @@ export class RoomManager {
     if (room.isEmpty && this.isLive(room)) this.rooms.delete(room.spaceId);
   }
 
+  /**
+   * Applies a furniture change reported by apps/http. Spaces nobody is in are skipped: the next join loads
+   * fresh data from the database. A load already in flight may or may not include the change, so wait for it
+   * and apply anyway (adds are idempotent by id).
+   */
+  async applyEvent(spaceId: string, event: InternalEvent) {
+    const room = this.rooms.get(spaceId) ?? (await this.loading.get(spaceId));
+    if (!room) return;
+
+    if (event.type === "element-added") room.addElement(event.payload);
+    else room.removeElement(event.payload.id);
+  }
+
   private async load(spaceId: string): Promise<Room | null> {
     // One SQL round trip. The equivalent nested Prisma query issues one query per relation,
     // which made joining take seconds against a remote database.
     const rows = await client.$queryRaw<SpaceRow[]>`
       SELECT s.width, s.height, m."tmjUrl",
         COALESCE(
-          json_agg(json_build_object('x', se.x, 'y', se.y, 'width', e.width, 'height', e.height, 'static', e.static))
+          json_agg(json_build_object('id', se.id, 'x', se.x, 'y', se.y, 'width', e.width, 'height', e.height, 'static', e.static))
             FILTER (WHERE se.id IS NOT NULL),
           '[]'
         ) AS elements
@@ -59,9 +72,7 @@ export class RoomManager {
     if (!space) return null;
 
     const tiledMap = space.tmjUrl ? await loadTiledMap(space.tmjUrl) : null;
-    const grid = buildCollisionGrid(space.width, space.height, tiledMap, space.elements);
-
-    const room = new Room(spaceId, grid);
+    const room = new Room(spaceId, space.width, space.height, tiledMap, space.elements);
     this.rooms.set(spaceId, room);
     return room;
   }

@@ -1,15 +1,55 @@
-import type { CollisionGrid, Position, RemoteUser, ServerMessage } from "@repo/protocol";
+import {
+  buildCollisionGrid,
+  type CollisionGrid,
+  type PlacedElement,
+  type Position,
+  type RemoteUser,
+  type ServerMessage,
+  type SpaceElement,
+  type TiledMap,
+} from "@repo/protocol";
 import type { Session } from "./Session.js";
 
-/** Everyone currently connected to one space, plus that space's walkability grid. */
+/** Everyone currently connected to one space, plus that space's furniture and walkability grid. */
 export class Room {
   // One session per user: joining again (e.g. a second tab) replaces the previous session
   private readonly sessions = new Map<string, Session>();
+  // Keyed by placement (spaceElements row) id
+  private readonly elements: Map<string, PlacedElement>;
+  private _grid: CollisionGrid;
 
   constructor(
     readonly spaceId: string,
-    readonly grid: CollisionGrid
-  ) {}
+    private readonly width: number,
+    private readonly height: number,
+    private readonly tiledMap: TiledMap | null,
+    elements: (PlacedElement & { id: string })[]
+  ) {
+    this.elements = new Map(elements.map(({ id, ...placed }) => [id, placed]));
+    this._grid = this.buildGrid();
+  }
+
+  get grid() {
+    return this._grid;
+  }
+
+  /** Furniture was placed through the API: block its tiles and tell everyone. Repeats are ignored. */
+  addElement(placed: SpaceElement) {
+    if (this.elements.has(placed.id)) return;
+    this.elements.set(placed.id, { x: placed.x, y: placed.y, ...placed.element });
+    this._grid = this.buildGrid();
+    this.broadcast({ type: "element-added", payload: placed });
+  }
+
+  removeElement(id: string) {
+    if (!this.elements.delete(id)) return;
+    this._grid = this.buildGrid();
+    this.broadcast({ type: "element-removed", payload: { id } });
+  }
+
+  private buildGrid() {
+    return buildCollisionGrid(this.width, this.height, this.tiledMap, [...this.elements.values()]);
+  }
 
   get isEmpty() {
     return this.sessions.size === 0;

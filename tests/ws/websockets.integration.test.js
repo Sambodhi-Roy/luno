@@ -1,7 +1,7 @@
 // WebSocket contract for core/apps/ws (needs it running on :3002 alongside the API).
 const WebSocket = require("ws");
 const { createAdmin, createUser } = require("../_helpers/auth.helper");
-const { createSpace, addElement } = require("../_helpers/space.helper");
+const { createSpace, addElement, removeElement } = require("../_helpers/space.helper");
 const { createElement } = require("../_helpers/admin.helper");
 const { waitForMessage } = require("../_helpers/ws.helper");
 
@@ -214,5 +214,74 @@ describe("Websocket rules", () => {
     const next = await waitForMessage(watcher.messages);
     expect(next.type).toBe("user-join");
     expect(next.payload.userId).toBe(user.userId);
+  });
+});
+
+describe("Live furniture updates", () => {
+  let owner, visitor, spaceId, elementId;
+  const sockets = [];
+
+  async function joined(token) {
+    const messages = [];
+    const ws = await connect(messages);
+    sockets.push(ws);
+    send(ws, "join", { spaceId, token });
+    const msg = await waitForMessage(messages);
+    return { ws, messages, spawn: msg.payload.spawn };
+  }
+
+  beforeAll(async () => {
+    owner = await createUser();
+    visitor = await createAdmin();
+    const space = await createSpace(owner.token, "WS Build", "10x10");
+    spaceId = space.data.spaceId;
+    const element = await createElement(visitor.token, { isStatic: true });
+    elementId = element.data.id;
+  });
+
+  afterAll(() => sockets.forEach((ws) => ws.close()));
+
+  test("Placing and removing furniture is pushed live and changes what's walkable", async () => {
+    // The visitor spawns in the centre (5, 5); the owner joins to watch the visitor's moves
+    const v = await joined(visitor.token);
+    expect(v.spawn).toEqual({ x: 5, y: 5 });
+    const o = await joined(owner.token);
+    expect((await waitForMessage(v.messages)).type).toBe("user-join");
+
+    const added = await addElement(owner.token, spaceId, elementId, 6, 5);
+    expect(added.status).toBe(200);
+
+    for (const client of [v, o]) {
+      const msg = await waitForMessage(client.messages);
+      expect(msg.type).toBe("element-added");
+      expect(msg.payload.id).toBe(added.data.element.id);
+      expect(msg.payload).toMatchObject({ x: 6, y: 5, element: { id: elementId, static: true } });
+    }
+
+    // The new table blocks the tile to the visitor's right
+    send(v.ws, "movement", { x: 6, y: 5 });
+    expect((await waitForMessage(v.messages)).type).toBe("movement-rejected");
+
+    const removed = await removeElement(owner.token, added.data.element.id);
+    expect(removed.status).toBe(200);
+    for (const client of [v, o]) {
+      const msg = await waitForMessage(client.messages);
+      expect(msg).toEqual({ type: "element-removed", payload: { id: added.data.element.id } });
+    }
+
+    // Walkable again: the owner sees the visitor step onto it
+    send(v.ws, "movement", { x: 6, y: 5 });
+    const moved = await waitForMessage(o.messages);
+    expect(moved.type).toBe("movement");
+    expect(moved.payload).toMatchObject({ userId: visitor.userId, x: 6, y: 5 });
+  });
+
+  test("The internal events endpoint rejects callers without the shared secret", async () => {
+    const res = await fetch(`http://localhost:3002/internal/spaces/${spaceId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer wrong-secret" },
+      body: JSON.stringify({ type: "element-removed", payload: { id: "x" } }),
+    });
+    expect(res.status).toBe(401);
   });
 });
