@@ -1,0 +1,26 @@
+{
+  "name": "ws-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@repo/db": "workspace:^",
+    "@repo/protocol": "workspace:^",
+    "dotenv": "^17.2.3",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

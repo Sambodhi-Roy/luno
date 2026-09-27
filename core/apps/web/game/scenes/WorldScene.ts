@@ -1,27 +1,44 @@
 import * as Phaser from "phaser";
-import type { SpaceDetail } from "@/lib/types";
-import { Player } from "../entities/Player";
+import { buildCollisionGrid, type CollisionGrid, type TiledMap } from "@repo/protocol/rules";
+import type { RemoteUser } from "@repo/protocol";
+import type { Me, SpaceDetail } from "@/lib/types";
+import { Avatar, TILE } from "../entities/Avatar";
+import { LocalPlayer } from "../entities/LocalPlayer";
+import { NetworkManager, type ConnectionStatus } from "../network/NetworkManager";
 
-const TILE = 32;
 const MIN_ZOOM = 1.5;
 const FALLBACK_MAP_URL = "/assets/maps/sample-map.tmj";
+// How quickly the camera catches up with the player (0-1 per frame)
+const CAMERA_LERP = 0.1;
 
 type TiledTileset = { name: string; image: string };
 
+export type WorldSceneData = {
+  space: SpaceDetail;
+  me: Me;
+  onStatus: (status: ConnectionStatus) => void;
+  onPresence: (online: number) => void;
+};
+
 export class WorldScene extends Phaser.Scene {
-  player!: Player;
-  private space!: SpaceDetail;
+  // Not `data`: Phaser.Scene already uses that name for its DataManager
+  private ctx!: WorldSceneData;
+  private grid!: CollisionGrid;
+  private network!: NetworkManager;
+  private player: LocalPlayer | null = null;
+  private readonly remotes = new Map<string, Avatar>();
 
   constructor() {
     super("WorldScene");
   }
 
-  init(data: { space: SpaceDetail }) {
-    this.space = data.space;
+  init(data: WorldSceneData) {
+    this.ctx = data;
   }
 
   preload() {
-    this.load.tilemapTiledJSON("map", this.space.tmjUrl ?? FALLBACK_MAP_URL);
+    const { space } = this.ctx;
+    this.load.tilemapTiledJSON("map", space.tmjUrl ?? FALLBACK_MAP_URL);
 
     // Tileset image paths inside a .tmj point at the artist's folders, so load each one
     // from /assets/tilesets by file name, keyed by the tileset name used in Tiled
@@ -33,7 +50,7 @@ export class WorldScene extends Phaser.Scene {
       }
     });
 
-    for (const { element } of this.space.elements) {
+    for (const { element } of space.elements) {
       const key = elementKey(element.id);
       if (!this.textures.exists(key)) this.load.image(key, element.imageUrl);
     }
@@ -45,135 +62,136 @@ export class WorldScene extends Phaser.Scene {
   }
 
   create() {
+    const { space } = this.ctx;
     const map = this.make.tilemap({ key: "map" });
     const tilesets = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
 
-    const colliders: Phaser.Tilemaps.TilemapLayer[] = [];
     for (const layerData of map.layers) {
       const layer = map.createLayer(layerData.name, tilesets, 0, 0);
-      if (!layer) continue;
-      layer.setCollisionByProperty({ collides: true });
       // The "Collision" layer only marks blocked tiles; it isn't meant to be seen
-      if (layerData.name === "Collision") layer.setVisible(false);
-      colliders.push(layer);
+      if (layer && layerData.name === "Collision") layer.setVisible(false);
     }
 
-    const blockers = this.placeElements();
-
+    this.placeElements();
     this.createAnimations();
 
-    this.player = new Player(this, map.widthInPixels / 2, map.heightInPixels / 2);
-    this.player.sprite.setCollideWorldBounds(true);
-    this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    // Same rules the server enforces, so predicted steps are almost never rejected
+    const [width, height] = space.dimensions.split("x").map(Number) as [number, number];
+    const tiledMap = space.tmjUrl ? (this.cache.tilemap.get("map").data as TiledMap) : null;
+    this.grid = buildCollisionGrid(
+      width,
+      height,
+      tiledMap,
+      space.elements.map(({ x, y, element }) => ({ x, y, ...element }))
+    );
 
-    for (const layer of colliders) this.physics.add.collider(this.player.sprite, layer);
-    this.physics.add.collider(this.player.sprite, blockers);
+    this.setUpCamera(map);
+    this.connect();
 
-    const cam = this.cameras.main;
-    cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-    cam.startFollow(this.player.sprite, true, 0.1, 0.1);
-
-    // Zoom in enough that the map always covers the viewport (no empty margins on big screens)
-    const fitZoom = () =>
-      cam.setZoom(
-        Math.max(MIN_ZOOM, this.scale.width / map.widthInPixels, this.scale.height / map.heightInPixels)
-      );
-    fitZoom();
-    this.scale.on("resize", fitZoom);
-    this.events.once("shutdown", () => this.scale.off("resize", fitZoom));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.network.close());
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => this.network.close());
   }
 
   update() {
-    this.player.update();
-    // Draw the player in front of things above them and behind things below them
-    this.player.sprite.setDepth(this.player.sprite.body!.bottom);
+    this.player?.update();
   }
 
-  // Draws the space's elements and returns static bodies for the ones that block movement
-  private placeElements() {
-    const blockers = this.physics.add.staticGroup();
+  private connect() {
+    this.network = new NetworkManager(this.ctx.space.id, this.ctx.onStatus)
+      .on("space-joined", ({ spawn, users }) => {
+        // Also runs after a reconnect: start from the server's view of the room
+        this.clearRemotes();
+        users.forEach((u) => this.addRemote(u));
 
-    for (const { element, x, y } of this.space.elements) {
+        if (this.player) {
+          this.player.snapTo(spawn.x, spawn.y);
+        } else {
+          this.player = new LocalPlayer(this, spawn.x, spawn.y, this.ctx.me.username, this.grid, (x, y) =>
+            this.network.sendMove(x, y)
+          );
+          this.cameras.main.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
+        }
+        this.reportPresence();
+      })
+      .on("user-join", (user) => {
+        // A known user re-joining (e.g. from another tab) just moves to their new spot
+        const existing = this.remotes.get(user.userId);
+        if (existing) existing.snapTo(user.x, user.y);
+        else this.addRemote(user);
+        this.reportPresence();
+      })
+      .on("movement", ({ userId, x, y }) => this.remotes.get(userId)?.moveTo(x, y))
+      .on("movement-rejected", ({ x, y }) => this.player?.snapTo(x, y))
+      .on("user-left", ({ userId }) => {
+        this.remotes.get(userId)?.destroy();
+        this.remotes.delete(userId);
+        this.reportPresence();
+      });
+
+    this.network.connect();
+  }
+
+  private addRemote(user: RemoteUser) {
+    this.remotes.set(user.userId, new Avatar(this, user.x, user.y, user.username));
+  }
+
+  private clearRemotes() {
+    this.remotes.forEach((avatar) => avatar.destroy());
+    this.remotes.clear();
+  }
+
+  private reportPresence() {
+    this.ctx.onPresence(this.remotes.size + (this.player ? 1 : 0));
+  }
+
+  private setUpCamera(map: Phaser.Tilemaps.Tilemap) {
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    cam.centerOn(map.widthInPixels / 2, map.heightInPixels / 2);
+
+    // Zoom in enough that the map always covers the viewport (no empty margins on big screens)
+    const fitZoom = () =>
+      cam.setZoom(Math.max(MIN_ZOOM, this.scale.width / map.widthInPixels, this.scale.height / map.heightInPixels));
+    fitZoom();
+    this.scale.on("resize", fitZoom);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off("resize", fitZoom));
+  }
+
+  private placeElements() {
+    for (const { element, x, y } of this.ctx.space.elements) {
       const px = x * TILE;
       const py = y * TILE;
       const w = element.width * TILE;
       const h = element.height * TILE;
 
-      this.add
-        .image(px, py, elementKey(element.id))
-        .setOrigin(0, 0)
-        .setDisplaySize(w, h)
-        .setDepth(py + h);
-
-      if (element.static) {
-        // Only the bottom row blocks, so taller furniture can be walked behind (top-down perspective)
-        const zone = this.add.zone(px, py + h - TILE, w, TILE).setOrigin(0, 0);
-        blockers.add(zone);
-      }
+      // Depth = bottom edge, so characters standing below draw in front and those above draw behind
+      this.add.image(px, py, elementKey(element.id)).setOrigin(0, 0).setDisplaySize(w, h).setDepth(py + h);
     }
-
-    return blockers;
   }
 
   private createAnimations() {
     const anims = this.anims;
     if (anims.exists("idle-down")) return;
 
-    anims.create({
-      key: "idle-right",
-      frames: [{ key: "adam", frame: 0 }],
-      frameRate: 1,
-      repeat: -1,
-    });
+    // Sprite sheet layout of /assets/characters/adam.png: idle frames 0-3, walk cycles of 6 from frame 48
+    const idleFrames = { right: 0, up: 1, left: 2, down: 3 };
+    const walkStart = { right: 48, up: 54, left: 60, down: 66 };
 
-    anims.create({
-      key: "idle-up",
-      frames: [{ key: "adam", frame: 1 }],
-      frameRate: 1,
-      repeat: -1,
-    });
-
-    anims.create({
-      key: "idle-left",
-      frames: [{ key: "adam", frame: 2 }],
-      frameRate: 1,
-      repeat: -1,
-    });
-
-    anims.create({
-      key: "idle-down",
-      frames: [{ key: "adam", frame: 3 }],
-      frameRate: 1,
-      repeat: -1,
-    });
-
-    anims.create({
-      key: "walk-right",
-      frames: anims.generateFrameNumbers("adam", { start: 48, end: 53 }),
-      frameRate: 10,
-      repeat: 0,
-    });
-
-    anims.create({
-      key: "walk-up",
-      frames: anims.generateFrameNumbers("adam", { start: 54, end: 59 }),
-      frameRate: 10,
-      repeat: 0,
-    });
-
-    anims.create({
-      key: "walk-left",
-      frames: anims.generateFrameNumbers("adam", { start: 60, end: 65 }),
-      frameRate: 10,
-      repeat: 0,
-    });
-
-    anims.create({
-      key: "walk-down",
-      frames: anims.generateFrameNumbers("adam", { start: 66, end: 71 }),
-      frameRate: 10,
-      repeat: 0,
-    });
+    for (const dir of ["right", "up", "left", "down"] as const) {
+      anims.create({
+        key: `idle-${dir}`,
+        frames: [{ key: "adam", frame: idleFrames[dir] }],
+        frameRate: 1,
+        repeat: -1,
+      });
+      anims.create({
+        key: `walk-${dir}`,
+        frames: anims.generateFrameNumbers("adam", { start: walkStart[dir], end: walkStart[dir] + 5 }),
+        frameRate: 10,
+        // Loops while stepping tile to tile; Avatar switches back to idle when movement stops
+        repeat: -1,
+      });
+    }
   }
 }
 

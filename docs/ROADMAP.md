@@ -10,7 +10,7 @@ Luno is a 2D metaverse in the style of Gather and Zep. Users sign in, pick an av
 |---|---|---|
 | 0 | Stabilise the foundation | ✅ Done |
 | 1 | Web app shell | ✅ Done |
-| 2 | Real-time multiplayer | ⬜ Not started |
+| 2 | Real-time multiplayer | ✅ Done |
 | 3 | Space building (place elements) | ⬜ Not started |
 | 4 | Social layer | ⬜ Not started |
 | 5 | Proximity audio/video (LiveKit) | ⬜ Not started |
@@ -61,13 +61,14 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 **Done when:** a user can sign up, create a space from the sample map, open it, and walk around alone with elements loaded from the DB. ✅ Verified in headless Chrome, and 34/34 HTTP tests pass.
 
 ### Phase 2: Real-time multiplayer
-- [ ] `core/apps/ws`: Node with `ws` on :3002, a `RoomManager` (spaceId → users), and a `User` object per socket
-- [ ] Messages: `join` → `space-joined {spawn, users}`, `user-join`, `movement` / `movement-rejected`, `user-left`
-- [ ] Verify the JWT on join, and build the collision grid from the `.tmj` plus static elements
-- [ ] Client: `NetworkManager` and a `RemotePlayer` entity that interpolates moves
-- [ ] `Player` switches to tile-step movement, with name labels over avatars
+- [x] `core/apps/ws`: Node with `ws` on :3002, a `RoomManager` (spaceId → room, loaded on first join and dropped when empty), and a `Session` per socket
+- [x] Messages: `join` → `space-joined {spawn, users}`, `user-join`, `movement` / `movement-rejected`, `user-left`, `error`
+- [x] Verify the JWT on join (from the auth cookie, or a `token` in the payload), and build the collision grid from the `.tmj` plus static elements
+- [x] `@repo/protocol`: message types, Zod schemas and the shared collision rules (`@repo/protocol/rules`), used by both server and client
+- [x] Client: `NetworkManager` (auto-reconnect), an `Avatar` entity for other players, and a `LocalPlayer` that steps tile by tile with predicted collisions
+- [x] Name labels over avatars, an online count and connection status in the space page, and a second tab replaces the first session
 
-**Done when:** `tests/ws` passes and two browser tabs see each other move smoothly.
+**Done when:** `tests/ws` passes and two browser tabs see each other move smoothly. ✅ 44/44 tests pass, and a two-player headless Chrome run sees join, movement and leave.
 
 ### Phase 3: Space building
 - [ ] Build mode for the space owner: element palette, ghost preview snapped to the grid, click to place, right-click to remove

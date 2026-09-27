@@ -54,6 +54,11 @@
   --sprite-frame-w: 16px;
   --sprite-frame-h: 32px;
   --sprite-idle-frame: 3;
+
+  /* Name labels drawn above characters in the game canvas (read by game/entities/Avatar.ts) */
+  --game-label-font-size: 11px;
+  --game-label-padding-x: 4px;
+  --game-label-padding-y: 1px;
 }
 
 @layer base {
@@ -84,6 +89,16 @@
 
 @utility card {
   @apply rounded-2xl border border-border bg-foreground;
+}
+
+/* Small floating label, e.g. the space name and connection status over the game */
+@utility chip {
+  @apply flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-medium;
+}
+
+/* Coloured status dot inside a chip; pick the colour with bg-success / bg-warning / bg-error */
+@utility status-dot {
+  @apply size-2 rounded-full;
 }
 
 @utility field {

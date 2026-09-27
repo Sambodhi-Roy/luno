@@ -1,7 +1,8 @@
-// WebSocket contract for Phase 2. Expected to fail until core/apps/ws exists.
+// WebSocket contract for core/apps/ws (needs it running on :3002 alongside the API).
 const WebSocket = require("ws");
 const { createAdmin, createUser } = require("../_helpers/auth.helper");
-const { createSpace } = require("../_helpers/space.helper");
+const { createSpace, addElement } = require("../_helpers/space.helper");
+const { createElement } = require("../_helpers/admin.helper");
 const { waitForMessage } = require("../_helpers/ws.helper");
 
 const WS_URL = "ws://localhost:3002";
@@ -16,6 +17,14 @@ async function connect(messages) {
     ws.on("error", reject);
   });
   return ws;
+}
+
+function send(ws, type, payload) {
+  ws.send(JSON.stringify({ type, payload }));
+}
+
+function waitForClose(ws) {
+  return new Promise((resolve) => ws.on("close", (code) => resolve(code)));
 }
 
 describe("Websocket integration", () => {
@@ -111,5 +120,99 @@ describe("Websocket integration", () => {
 
     expect(msg.type).toBe("user-left");
     expect(msg.payload.userId).toBe(admin.userId);
+  });
+});
+
+describe("Websocket rules", () => {
+  let admin, user;
+  const sockets = [];
+
+  async function open() {
+    const messages = [];
+    const ws = await connect(messages);
+    sockets.push(ws);
+    return { ws, messages };
+  }
+
+  beforeAll(async () => {
+    admin = await createAdmin();
+    user = await createUser();
+  });
+
+  afterAll(() => sockets.forEach((ws) => ws.close()));
+
+  test("Joining with an invalid token is refused and the socket closed", async () => {
+    const space = await createSpace(user.token, "WS Auth", "10x10");
+    const { ws, messages } = await open();
+    const closed = waitForClose(ws);
+
+    send(ws, "join", { spaceId: space.data.spaceId, token: "not-a-jwt" });
+
+    const msg = await waitForMessage(messages);
+    expect(msg.type).toBe("error");
+    expect(await closed).toBe(4001);
+  });
+
+  test("Joining a space that does not exist is refused", async () => {
+    const { ws, messages } = await open();
+    const closed = waitForClose(ws);
+
+    send(ws, "join", { spaceId: "no-such-space", token: user.token });
+
+    const msg = await waitForMessage(messages);
+    expect(msg.type).toBe("error");
+    expect(await closed).toBe(4004);
+  });
+
+  test("Moving before joining returns an error", async () => {
+    const { ws, messages } = await open();
+    send(ws, "movement", { x: 1, y: 1 });
+
+    const msg = await waitForMessage(messages);
+    expect(msg.type).toBe("error");
+  });
+
+  test("Walking into a static element is rejected", async () => {
+    // Spawn is the centre tile of an empty space: (5, 5) for 10x10. Block the tile to its right.
+    const space = await createSpace(user.token, "WS Wall", "10x10");
+    const element = await createElement(admin.token, { isStatic: true });
+    const added = await addElement(user.token, space.data.spaceId, element.data.id, 6, 5);
+    expect(added.status).toBe(200);
+
+    const { ws, messages } = await open();
+    send(ws, "join", { spaceId: space.data.spaceId, token: user.token });
+    const joined = await waitForMessage(messages);
+    expect(joined.payload.spawn).toEqual({ x: 5, y: 5 });
+
+    send(ws, "movement", { x: 6, y: 5 });
+    const blocked = await waitForMessage(messages);
+    expect(blocked.type).toBe("movement-rejected");
+    expect(blocked.payload).toEqual({ x: 5, y: 5 });
+  });
+
+  test("Joining again from another tab replaces the first session without a leave event", async () => {
+    const space = await createSpace(user.token, "WS Tabs", "10x10");
+    const spaceId = space.data.spaceId;
+
+    const watcher = await open();
+    send(watcher.ws, "join", { spaceId, token: admin.token });
+    await waitForMessage(watcher.messages);
+
+    const tab1 = await open();
+    send(tab1.ws, "join", { spaceId, token: user.token });
+    await waitForMessage(tab1.messages);
+    expect((await waitForMessage(watcher.messages)).type).toBe("user-join");
+
+    const tab1Closed = waitForClose(tab1.ws);
+    const tab2 = await open();
+    send(tab2.ws, "join", { spaceId, token: user.token });
+
+    expect((await waitForMessage(tab2.messages)).type).toBe("space-joined");
+    expect(await tab1Closed).toBe(4000);
+
+    // The watcher sees the user re-appear, never leave
+    const next = await waitForMessage(watcher.messages);
+    expect(next.type).toBe("user-join");
+    expect(next.payload.userId).toBe(user.userId);
   });
 });
