@@ -28,6 +28,33 @@ export const clientMessageSchema = z.discriminatedUnion("type", [joinMessageSche
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
+/* ---------- Space furniture (shared by server -> client and api -> ws messages) ---------- */
+
+export const spaceElementSchema = z.object({
+  // The placement's id (a spaceElements row), not the catalogue element's id
+  id: z.string().min(1),
+  x: tile,
+  y: tile,
+  element: z.object({
+    id: z.string().min(1),
+    imageUrl: z.string(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    static: z.boolean(),
+  }),
+});
+
+export type SpaceElement = z.infer<typeof spaceElementSchema>;
+
+/* ---------- apps/http -> apps/ws (internal, authenticated with INTERNAL_SECRET) ---------- */
+
+export const internalEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("element-added"), payload: spaceElementSchema }),
+  z.object({ type: z.literal("element-removed"), payload: z.object({ id: z.string().min(1) }) }),
+]);
+
+export type InternalEvent = z.infer<typeof internalEventSchema>;
+
 /* ---------- Server -> client ---------- */
 
 export type Position = { x: number; y: number };
@@ -46,6 +73,9 @@ export type ServerMessage =
   // Sent to the mover only, with their authoritative position to snap back to
   | { type: "movement-rejected"; payload: Position }
   | { type: "user-left"; payload: { userId: string } }
+  // The space's furniture changed (placed or removed through the API)
+  | { type: "element-added"; payload: SpaceElement }
+  | { type: "element-removed"; payload: { id: string } }
   | { type: "error"; payload: { message: string } };
 
 export type ServerMessageType = ServerMessage["type"];

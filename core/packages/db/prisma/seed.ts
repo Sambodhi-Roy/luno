@@ -15,11 +15,11 @@ const elements = [
 const officeMap = {
   id: "seed-map-office",
   name: "Office",
-  // Must match the tile size of sample-map.tmj
+  // Must match the size in tiles of office/office.tmj
   width: 25,
   height: 25,
-  thumbnail: "/assets/maps/sample-map.png",
-  tmjUrl: "/assets/maps/sample-map.tmj",
+  thumbnail: "/assets/maps/office/thumbnail.png",
+  tmjUrl: "/assets/maps/office/office.tmj",
 };
 
 // Tile coordinates of each element's top-left corner, kept clear of the map's own furniture

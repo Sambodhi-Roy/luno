@@ -66,3 +66,17 @@ export const createMapSchema = z.object({
 export const deleteElementSchema = z.object({
   id: z.string()
 }) 
+export const uploadImageSchema = z.object({
+  kind: z.enum(["element", "avatar", "thumbnail"]),
+});
+
+// The parts of a Tiled .tmj export the game relies on. Tilesets must be embedded (not external .tsx files).
+export const tiledMapSchema = z.object({
+  type: z.literal("map"),
+  width: z.number().int().positive().max(9999),
+  height: z.number().int().positive().max(9999),
+  tilewidth: z.number().int().positive(),
+  tileheight: z.number().int().positive(),
+  layers: z.array(z.object({ type: z.string() })).min(1),
+  tilesets: z.array(z.object({ firstgid: z.number().int(), image: z.string().min(1) })).min(1),
+});

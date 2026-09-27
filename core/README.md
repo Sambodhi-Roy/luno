@@ -41,6 +41,10 @@ pnpm dev    # web :3000, API :3001, WebSocket :3002 (API and WS reload on save)
 
 To run one at a time: `pnpm --filter web dev`, `pnpm --filter http dev` or `pnpm --filter ws-server dev`.
 
+Admin uploads (furniture, avatars, maps) are saved to `apps/web/public/uploads/` (gitignored) and served by the web app.
+
+The API and WebSocket server share an `INTERNAL_SECRET`: the API uses it to tell the WebSocket server about furniture changes, so they appear live. Set the same value in `apps/http/.env` and `apps/ws/.env`, along with `WS_INTERNAL_URL` in the API's.
+
 The API allows the web origin through CORS. Set `WEB_ORIGIN` in `apps/http/.env` if the web app runs somewhere other than `http://localhost:3000`.
 
 ## Tests

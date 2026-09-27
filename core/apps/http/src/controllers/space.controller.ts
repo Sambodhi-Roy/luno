@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
 import { createSpaceSchema, addElementSchema, deleteElementSchema } from "../types/index.js";
+import { notifySpace } from "../lib/realtime.js";
 
 const parseDimensions = (dimensions: string) => {
   const [widthStr, heightStr] = dimensions.split("x") as [string, string];
@@ -319,14 +320,24 @@ export const addElementToSpace = async (req: Request, res: Response) => {
       },
     });
 
+    // Same shape the WebSocket server broadcasts, so the caller can draw it straight away
+    const placed = {
+      id: spaceElement.id,
+      x,
+      y,
+      element: {
+        id: element.id,
+        imageUrl: element.imageUrl,
+        width: element.width,
+        height: element.height,
+        static: element.static,
+      },
+    };
+    notifySpace(spaceId, { type: "element-added", payload: placed });
+
     return res.status(200).json({
       message: "Element added to space successfully",
-      element: {
-        id: spaceElement.id,
-        elementId,
-        x,
-        y,
-      },
+      element: { ...placed, elementId },
     });
   } catch (e) {
     return res.status(500).json({
@@ -376,6 +387,7 @@ export const removeElementFromSpace = async (req: Request, res: Response) => {
     await client.spaceElements.delete({
       where: { id },
     });
+    notifySpace(spaceElement.spaceId, { type: "element-removed", payload: { id } });
 
     return res.status(200).json({
       message: "Element removed from space successfully",

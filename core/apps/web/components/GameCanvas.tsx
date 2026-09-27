@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { ConnectionStatus } from "@/game";
-import type { Me, SpaceDetail } from "@/lib/types";
+import type { GameController, WorldSceneData } from "@/game";
 
-type GameCanvasProps = {
-  space: SpaceDetail;
-  me: Me;
-  // Pass stable functions (e.g. state setters): a new function recreates the game
-  onStatus: (status: ConnectionStatus) => void;
-  onPresence: (online: number) => void;
+type GameCanvasProps = Omit<WorldSceneData, "space" | "me" | "onCreated"> & {
+  space: WorldSceneData["space"];
+  me: WorldSceneData["me"];
+  // Receives the controller once the game exists, and null when it's torn down
+  onReady: (controller: GameController | null) => void;
 };
 
-export function GameCanvas({ space, me, onStatus, onPresence }: GameCanvasProps) {
+// All callbacks must be stable (state setters or useCallback): a new function recreates the game
+export function GameCanvas({ space, me, onStatus, onPresence, onPlace, onRemove, onReady }: GameCanvasProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,20 +20,25 @@ export function GameCanvas({ space, me, onStatus, onPresence }: GameCanvasProps)
     // createGame resolves asynchronously, so cleanup can run before the game exists
     // (e.g. React StrictMode's double mount). The flag makes a late game destroy itself.
     let cancelled = false;
-    let game: { destroy: (removeCanvas: boolean) => void } | undefined;
+    let game: GameController | undefined;
 
     (async () => {
       const mod = await import("../game/index");
-      const created = await mod.createGame(ref.current!, { space, me, onStatus, onPresence });
-      if (cancelled) created.destroy(true);
-      else game = created;
+      const created = await mod.createGame(ref.current!, { space, me, onStatus, onPresence, onPlace, onRemove });
+      if (cancelled) {
+        created.destroy();
+        return;
+      }
+      game = created;
+      onReady(created);
     })();
 
     return () => {
       cancelled = true;
-      game?.destroy(true);
+      game?.destroy();
+      onReady(null);
     };
-  }, [space, me, onStatus, onPresence]);
+  }, [space, me, onStatus, onPresence, onPlace, onRemove, onReady]);
 
   return <div ref={ref} className="flex h-full w-full" />;
 }
