@@ -20,6 +20,7 @@ model User {
   avatarId String?
   role     Role
   space   Space[]
+  memberships SpaceMember[]
   avatar  Avatar? @relation(fields: [avatarId], references: [id])
 }
 
@@ -31,9 +32,28 @@ model Space {
   thumbnail String?
   creatorId String
   mapId     String?
+  // Public spaces are listed in Explore and open to any signed-in user; private ones need an invite
+  visibility SpaceVisibility @default(Private)
+  // Secret behind /invite/<code>; regenerating it revokes old links but keeps existing members
+  inviteCode String   @unique @default(cuid())
+  createdAt  DateTime @default(now())
   creator   User    @relation(fields: [creatorId], references: [id])
   map       Map?    @relation(fields: [mapId], references: [id], onDelete: SetNull)
   elements  spaceElements[]
+  members   SpaceMember[]
+}
+
+// Non-owners who joined a space (public visit or invite). The owner is Space.creatorId, never a row here.
+model SpaceMember {
+  userId        String
+  spaceId       String
+  joinedAt      DateTime @default(now())
+  lastVisitedAt DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space         Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, spaceId])
+  @@index([userId, lastVisitedAt])
 }
 
 model spaceElements {
@@ -82,6 +102,11 @@ model Avatar {
   imageUrl String?
   name     String?
   users   User[]
+}
+
+enum SpaceVisibility {
+  Public
+  Private
 }
 
 enum Role {
