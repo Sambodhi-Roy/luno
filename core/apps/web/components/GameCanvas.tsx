@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { GameController, WorldSceneData } from "@/game";
+import type { GameController, GameOptions } from "@/game";
 
-type GameCanvasProps = Omit<WorldSceneData, "space" | "me" | "onCreated"> & {
-  space: WorldSceneData["space"];
-  me: WorldSceneData["me"];
+type GameCanvasProps = {
+  options: GameOptions;
   // Receives the controller once the game exists, and null when it's torn down
   onReady: (controller: GameController | null) => void;
 };
 
-// All callbacks must be stable (state setters or useCallback): a new function recreates the game
-export function GameCanvas({ space, me, onStatus, onPresence, onPlace, onRemove, onReady }: GameCanvasProps) {
+// `options` must keep its identity between renders (useMemo over stable callbacks), and onReady must be
+// stable: a new value recreates the game
+export function GameCanvas({ options, onReady }: GameCanvasProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export function GameCanvas({ space, me, onStatus, onPresence, onPlace, onRemove,
 
     (async () => {
       const mod = await import("../game/index");
-      const created = await mod.createGame(ref.current!, { space, me, onStatus, onPresence, onPlace, onRemove });
+      const created = await mod.createGame(ref.current!, options);
       if (cancelled) {
         created.destroy();
         return;
@@ -38,7 +38,7 @@ export function GameCanvas({ space, me, onStatus, onPresence, onPlace, onRemove,
       game?.destroy();
       onReady(null);
     };
-  }, [space, me, onStatus, onPresence, onPlace, onRemove, onReady]);
+  }, [options, onReady]);
 
   return <div ref={ref} className="flex h-full w-full" />;
 }

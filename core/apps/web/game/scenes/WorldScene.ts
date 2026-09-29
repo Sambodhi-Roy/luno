@@ -11,18 +11,33 @@ const MIN_ZOOM = 1.5;
 const FALLBACK_MAP_URL = "/assets/maps/office/office.tmj";
 // How quickly the camera catches up with the player (0-1 per frame)
 const CAMERA_LERP = 0.1;
+// Editor camera: how far past the fitted zoom the wheel can zoom in, each wheel notch, and key pan speed
+const EDITOR_MAX_ZOOM_FACTOR = 3;
+const EDITOR_ZOOM_STEP = 1.1;
+const EDITOR_PAN_PX_PER_SEC = 600;
 
 type TiledTileset = { name: string; image: string };
 
-export type WorldSceneData = {
-  space: SpaceDetail;
-  me: Me;
+// Playing: walk around with everyone else over the WebSocket
+export type PlayModeData = {
+  mode: "play";
   onStatus: (status: ConnectionStatus) => void;
   onPresence: (online: number) => void;
-  // Build mode: persist a change through the API. Resolve with the saved placement / true, or null / false on failure.
+};
+
+// Editing (the owner's editor page): no avatar or connection, a free camera, and furniture placement
+export type EditModeData = {
+  mode: "edit";
+  // Persist a change through the API. Resolve with the saved placement / true, or null / false on failure.
   onPlace: (elementId: string, x: number, y: number) => Promise<SpaceElement | null>;
   onRemove: (spaceElementId: string) => Promise<boolean>;
-  // Set by createGame: called at the end of create(), once the scene can take build-mode calls
+};
+
+// What React passes to createGame
+export type GameOptions = { space: SpaceDetail; me: Me } & (PlayModeData | EditModeData);
+
+export type WorldSceneData = GameOptions & {
+  // Set by createGame: called at the end of create(), once the scene can take build-tool calls
   onCreated: (scene: WorldScene) => void;
 };
 
@@ -33,14 +48,16 @@ export class WorldScene extends Phaser.Scene {
   private spaceWidth = 0;
   private spaceHeight = 0;
   private grid!: CollisionGrid;
-  private network!: NetworkManager;
+  private network: NetworkManager | null = null;
   private player: LocalPlayer | null = null;
   private readonly remotes = new Map<string, Avatar>();
   // Furniture currently in the space, keyed by placement id
   private readonly placed = new Map<string, { data: SpaceElement; image: Phaser.GameObjects.Image }>();
-  private buildMode = false;
   private buildTool: BuildTool | null = null;
   private busy = false;
+  // Smallest zoom at which the map still covers the viewport
+  private fitZoom = MIN_ZOOM;
+  private panKeys: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key[]> | null = null;
 
   constructor() {
     super("WorldScene");
@@ -95,28 +112,30 @@ export class WorldScene extends Phaser.Scene {
 
     this.createAnimations();
     this.setUpCamera(map);
-    this.setUpBuildInput();
-    this.connect();
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.network.close());
-    this.events.once(Phaser.Scenes.Events.DESTROY, () => this.network.close());
+    if (this.ctx.mode === "play") {
+      this.connect();
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.network?.close());
+      this.events.once(Phaser.Scenes.Events.DESTROY, () => this.network?.close());
+    } else {
+      this.setUpEditorCamera();
+      this.setUpBuildInput();
+    }
+
     this.ctx.onCreated(this);
   }
 
-  update() {
+  update(_time: number, delta: number) {
     this.player?.update();
     this.buildTool?.update();
+    this.panWithKeys(delta);
   }
 
-  /* ---------- Build mode (called from React through the game controller) ---------- */
-
-  setBuildMode(enabled: boolean) {
-    this.buildMode = enabled;
-    if (!enabled) void this.setBuildTool(null);
-  }
+  /* ---------- Editing (called from React through the game controller) ---------- */
 
   /** Selects the element to place (loading its image first if needed), or clears the selection with null. */
   async setBuildTool(element: Element | null) {
+    if (this.ctx.mode !== "edit") return;
     if (!this.buildTool) {
       this.buildTool = new BuildTool(this, this.spaceWidth, this.spaceHeight, (el) => elementKey(el.id));
     }
@@ -129,7 +148,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
 
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
-      if (!this.buildMode || this.busy) return;
+      if (this.busy) return;
       if (pointer.rightButtonDown()) void this.removeAt(pointer);
       else if (pointer.leftButtonDown()) void this.placeSelected();
     });
@@ -138,7 +157,7 @@ export class WorldScene extends Phaser.Scene {
   private async placeSelected() {
     const tool = this.buildTool;
     const element = tool?.selected;
-    if (!tool || !element || !tool.target.fits) return;
+    if (this.ctx.mode !== "edit" || !tool || !element || !tool.target.fits) return;
 
     this.busy = true;
     const saved = await this.ctx.onPlace(element.id, tool.target.x, tool.target.y);
@@ -147,6 +166,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private async removeAt(pointer: Phaser.Input.Pointer) {
+    if (this.ctx.mode !== "edit") return;
     const world = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
     // Topmost (highest depth) furniture under the pointer
     let hit: string | null = null;
@@ -220,7 +240,10 @@ export class WorldScene extends Phaser.Scene {
   /* ---------- Multiplayer ---------- */
 
   private connect() {
-    this.network = new NetworkManager(this.ctx.space.id, this.ctx.onStatus)
+    if (this.ctx.mode !== "play") return;
+    const network = new NetworkManager(this.ctx.space.id, this.ctx.onStatus);
+    this.network = network;
+    network
       .on("space-joined", ({ spawn, users }) => {
         // Also runs after a reconnect: start from the server's view of the room
         this.clearRemotes();
@@ -235,7 +258,7 @@ export class WorldScene extends Phaser.Scene {
             spawn.y,
             this.ctx.me.username,
             (x, y) => this.grid.isWalkable(x, y),
-            (x, y) => this.network.sendMove(x, y)
+            (x, y) => network.sendMove(x, y)
           );
           this.cameras.main.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
         }
@@ -258,7 +281,7 @@ export class WorldScene extends Phaser.Scene {
       .on("element-added", (placement) => void this.addElement(placement))
       .on("element-removed", ({ id }) => this.removeElement(id));
 
-    this.network.connect();
+    network.connect();
   }
 
   private addRemote(user: RemoteUser) {
@@ -271,6 +294,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private reportPresence() {
+    if (this.ctx.mode !== "play") return;
     this.ctx.onPresence(this.remotes.size + (this.player ? 1 : 0));
   }
 
@@ -279,12 +303,47 @@ export class WorldScene extends Phaser.Scene {
     cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     cam.centerOn(map.widthInPixels / 2, map.heightInPixels / 2);
 
-    // Zoom in enough that the map always covers the viewport (no empty margins on big screens)
-    const fitZoom = () =>
-      cam.setZoom(Math.max(MIN_ZOOM, this.scale.width / map.widthInPixels, this.scale.height / map.heightInPixels));
-    fitZoom();
-    this.scale.on("resize", fitZoom);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off("resize", fitZoom));
+    // Zoom in enough that the map always covers the viewport (no empty margins on big screens).
+    // The editor may be zoomed in further, so only raise the zoom when it falls below the fit.
+    const fit = () => {
+      this.fitZoom = Math.max(MIN_ZOOM, this.scale.width / map.widthInPixels, this.scale.height / map.heightInPixels);
+      cam.setZoom(Math.max(this.ctx.mode === "edit" ? cam.zoom : 0, this.fitZoom));
+    };
+    fit();
+    this.scale.on("resize", fit);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off("resize", fit));
+  }
+
+  /* ---------- Editor camera: wheel to zoom, WASD / arrows or middle-drag to pan ---------- */
+
+  private setUpEditorCamera() {
+    const cam = this.cameras.main;
+
+    this.input.on(Phaser.Input.Events.POINTER_WHEEL, (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+      const next = dy > 0 ? cam.zoom / EDITOR_ZOOM_STEP : cam.zoom * EDITOR_ZOOM_STEP;
+      cam.setZoom(Phaser.Math.Clamp(next, this.fitZoom, this.fitZoom * EDITOR_MAX_ZOOM_FACTOR));
+    });
+
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.middleButtonDown()) return;
+      cam.scrollX -= (pointer.x - pointer.prevPosition.x) / cam.zoom;
+      cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom;
+    });
+
+    const keyboard = this.input.keyboard;
+    if (!keyboard) return;
+    const keys = (...codes: number[]) => codes.map((code) => keyboard.addKey(code, false));
+    const { W, A, S, D, UP, DOWN, LEFT, RIGHT } = Phaser.Input.Keyboard.KeyCodes;
+    this.panKeys = { up: keys(W, UP), down: keys(S, DOWN), left: keys(A, LEFT), right: keys(D, RIGHT) };
+  }
+
+  private panWithKeys(deltaMs: number) {
+    if (!this.panKeys) return;
+    const held = (dir: keyof NonNullable<typeof this.panKeys>) => this.panKeys![dir].some((k) => k.isDown);
+    const cam = this.cameras.main;
+    const step = (EDITOR_PAN_PX_PER_SEC * deltaMs) / 1000 / cam.zoom;
+    cam.scrollX += (Number(held("right")) - Number(held("left"))) * step;
+    cam.scrollY += (Number(held("down")) - Number(held("up"))) * step;
   }
 
   private createAnimations() {

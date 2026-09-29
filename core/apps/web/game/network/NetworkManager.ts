@@ -5,7 +5,7 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3002";
 // Wait longer after each failed attempt, capped at the last value
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000];
 // Close codes from apps/ws that mean "don't retry": replaced by another tab, unauthorized, space not found
-const TERMINAL_CLOSE_CODES = new Set([4000, 4001, 4004]);
+const TERMINAL_CLOSE_CODES = new Set([4000, 4001, 4003, 4004]);
 
 export type ConnectionStatus =
   | { state: "connecting" }

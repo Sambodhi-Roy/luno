@@ -1,23 +1,20 @@
 import * as Phaser from "phaser";
 import type { Element } from "@/lib/types";
 import { themeColor } from "@/lib/theme";
-import { WorldScene, type WorldSceneData } from "./scenes/WorldScene";
+import { WorldScene, type GameOptions } from "./scenes/WorldScene";
 
 export type { ConnectionStatus } from "./network/NetworkManager";
-export type { WorldSceneData } from "./scenes/WorldScene";
+export type { EditModeData, GameOptions, PlayModeData } from "./scenes/WorldScene";
 
 /** What React can do with a running game. */
 export type GameController = {
   destroy: () => void;
-  setBuildMode: (enabled: boolean) => void;
+  // Edit mode only: the furniture to place, or null for none
   setBuildTool: (element: Element | null) => void;
 };
 
 // This module is only ever loaded through a dynamic import in GameCanvas, so Phaser never runs on the server
-export async function createGame(
-  container: HTMLElement,
-  data: Omit<WorldSceneData, "onCreated">
-): Promise<GameController> {
+export async function createGame(container: HTMLElement, options: GameOptions): Promise<GameController> {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: container,
@@ -33,25 +30,19 @@ export async function createGame(
   // The scene only exists once Phaser has booted and run create(), so remember what React asked for
   // and apply it then
   let scene: WorldScene | null = null;
-  let buildMode = false;
   let buildTool: Element | null = null;
 
   // Added (not listed in the config) so the space and callbacks can be passed in as scene data
   game.scene.add("WorldScene", WorldScene, true, {
-    ...data,
+    ...options,
     onCreated: (created: WorldScene) => {
       scene = created;
-      created.setBuildMode(buildMode);
-      void created.setBuildTool(buildMode ? buildTool : null);
+      void created.setBuildTool(buildTool);
     },
   });
 
   return {
     destroy: () => game.destroy(true),
-    setBuildMode: (enabled) => {
-      buildMode = enabled;
-      scene?.setBuildMode(enabled);
-    },
     setBuildTool: (element) => {
       buildTool = element;
       if (scene) void scene.setBuildTool(element);
