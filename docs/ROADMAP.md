@@ -78,10 +78,20 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 
 **Done when:** the owner rearranges furniture live while a visitor watches it change and collides with it. ✅ 53/53 tests pass. Headless Chrome confirms owner/visitor live placement and removal, and an admin upload of furniture and a map that a new space then uses.
 
+### Between Phases 3 and 4: space access and the editor
+- [x] Spaces are **Public** (listed in Explore, open to anyone signed in) or **Private** (invite link only). New spaces default to Private; spaces that existed before were migrated to Public.
+- [x] `SpaceMember` records non-owners who joined through an invite or a public visit. The dashboard has **Your spaces**, **Joined** (most recently visited first) and **Explore** tabs.
+- [x] One access rule (owner, public, or member), enforced by `GET /space/:id` in `apps/http` and on `join` in `apps/ws` (close code 4003)
+- [x] Invite links (`/invite/<code>`) that the owner can reset. Signed-out visitors log in and come back to the invite.
+- [x] Building moved out of the live space into a dedicated editor (`/space/:id/edit`, from the card's ⋯ menu). It has no avatar or connection, and changes still reach players live.
+- [x] `promote-admin` / `demote-admin` scripts in `@repo/db`, so admins don't depend on self-signup
+
+**Known limitation:** switching a space to Private doesn't remove people who are already inside. It only affects new joins.
+
 ### Phase 4: Social layer
 - [ ] Text chat, both space-wide and proximity
 - [ ] Online-users sidebar, emotes and reactions, follow a user
-- [ ] Invite links, with an optional private-space flag
+- [x] Invite links, with an optional private-space flag (done early, see above)
 - [ ] Avatar sprite sheets per `Avatar`, replacing the hardcoded "adam"
 
 ### Phase 5: Proximity audio/video (LiveKit)
