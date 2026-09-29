@@ -6,46 +6,109 @@ import { useEffect, useState } from "react";
 import { AvatarPicker } from "@/components/AvatarPicker";
 import { AvatarSprite } from "@/components/AvatarSprite";
 import { CreateSpaceDialog } from "@/components/CreateSpaceDialog";
-import { Button, ErrorText } from "@/components/ui";
+import { SpaceCard } from "@/components/SpaceCard";
+import { SpaceSettingsDialog } from "@/components/SpaceSettingsDialog";
+import { Button, ErrorText, Menu, MenuItem } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { SpaceSummary } from "@/lib/types";
+import { inviteUrl } from "@/lib/navigation";
+import type { OtherSpaceSummary, OwnedSpaceSummary } from "@/lib/types";
 import { useMe } from "@/lib/useMe";
+
+// How long a confirmation like "Invite link copied" stays on screen
+const NOTICE_MS = 3000;
+
+const TABS = [
+  { id: "mine", label: "Your spaces" },
+  { id: "joined", label: "Joined" },
+  { id: "explore", label: "Explore" },
+] as const;
+
+type Tab = (typeof TABS)[number]["id"];
+
+const EMPTY_TEXT: Record<Tab, string> = {
+  mine: "You don't have any spaces yet. Create one to get started.",
+  joined: "Spaces you join through an invite link or from Explore show up here.",
+  explore: "No public spaces yet.",
+};
+
+const visitedLabel = (iso: string | null) =>
+  iso ? `visited ${new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : null;
 
 export default function DashboardPage() {
   const router = useRouter();
   const { me, refresh: refreshMe } = useMe();
-  const [spaces, setSpaces] = useState<SpaceSummary[] | null>(null);
+  const [tab, setTab] = useState<Tab>("mine");
+  const [mine, setMine] = useState<OwnedSpaceSummary[] | null>(null);
+  const [joined, setJoined] = useState<OtherSpaceSummary[] | null>(null);
+  const [explore, setExplore] = useState<OtherSpaceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showAvatar, setShowAvatar] = useState(false);
+  const [settingsFor, setSettingsFor] = useState<OwnedSpaceSummary | null>(null);
 
   const signedIn = me !== null;
 
+  // Each tab loads when it's first opened; Joined and Explore reload on every visit since they change without us
   useEffect(() => {
     if (!signedIn) return;
-    api<{ spaces: SpaceSummary[] }>("/space/all")
-      .then((res) => setSpaces(res.spaces))
-      .catch((e) => setError(e instanceof Error ? e.message : "Could not load spaces"));
-  }, [signedIn]);
+    const fail = (e: unknown) => setError(e instanceof Error ? e.message : "Could not load spaces");
+    if (tab === "mine") {
+      api<{ spaces: OwnedSpaceSummary[] }>("/space/all").then((res) => setMine(res.spaces), fail);
+    } else if (tab === "joined") {
+      api<{ spaces: OtherSpaceSummary[] }>("/space/joined").then((res) => setJoined(res.spaces), fail);
+    } else {
+      api<{ spaces: OtherSpaceSummary[] }>("/space/public").then((res) => setExplore(res.spaces), fail);
+    }
+  }, [signedIn, tab]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   async function signOut() {
     await api("/user/signout", { method: "POST" }).catch(() => {});
     router.replace("/login");
   }
 
-  async function deleteSpace(space: SpaceSummary) {
+  async function deleteSpace(space: OwnedSpaceSummary) {
     if (!confirm(`Delete "${space.name}"? This can't be undone.`)) return;
     try {
       await api(`/space/${space.id}`, { method: "DELETE" });
-      setSpaces((prev) => prev?.filter((s) => s.id !== space.id) ?? null);
+      setMine((prev) => prev?.filter((s) => s.id !== space.id) ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not delete space");
+    }
+  }
+
+  async function leaveSpace(space: OtherSpaceSummary) {
+    const warning =
+      space.visibility === "Private" ? " You'll need a new invite link to get back in." : "";
+    if (!confirm(`Leave "${space.name}"?${warning}`)) return;
+    try {
+      await api(`/space/${space.id}/membership`, { method: "DELETE" });
+      setJoined((prev) => prev?.filter((s) => s.id !== space.id) ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not leave space");
+    }
+  }
+
+  async function copyInvite(space: OwnedSpaceSummary) {
+    try {
+      await navigator.clipboard.writeText(inviteUrl(space.inviteCode));
+      setNotice("Invite link copied");
+    } catch {
+      setError("Could not copy the link. Open Settings to copy it by hand.");
     }
   }
 
   if (!me) {
     return <main className="flex min-h-screen items-center justify-center text-copy-lighter">Loading…</main>;
   }
+
+  const spaces = { mine, joined, explore }[tab];
 
   return (
     <main className="mx-auto max-w-5xl p-6">
@@ -71,8 +134,14 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your spaces</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div role="tablist" className="flex gap-1">
+          {TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className="tab">
+              {t.label}
+            </button>
+          ))}
+        </div>
         <Button onClick={() => setShowCreate(true)}>+ Create space</Button>
       </div>
 
@@ -82,50 +151,78 @@ export default function DashboardPage() {
 
       {spaces?.length === 0 && (
         <div className="rounded-2xl border border-dashed border-border p-12 text-center text-copy-lighter">
-          You don&apos;t have any spaces yet. Create one to get started.
+          {EMPTY_TEXT[tab]}
         </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {spaces?.map((space) => (
-          <div key={space.id} className="card overflow-hidden">
-            <Link href={`/space/${space.id}`} className="block aspect-video bg-background">
-              {space.thumbnail ? (
-                // eslint-disable-next-line @next/next/no-img-element -- pixel-art thumbnail served from /public
-                <img
-                  src={space.thumbnail}
-                  alt=""
-                  className="pixelated h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-copy-lighter">Empty space</div>
-              )}
-            </Link>
-            <div className="flex items-center justify-between gap-2 p-4">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{space.name}</p>
-                <p className="text-xs text-copy-lighter">{space.dimensions} tiles</p>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <Button variant="danger" onClick={() => deleteSpace(space)} className="px-3">
-                  Delete
-                </Button>
-                <Link
-                  href={`/space/${space.id}`}
-                  className="btn-primary px-3"
-                >
-                  Enter
-                </Link>
-              </div>
-            </div>
-          </div>
-        ))}
+        {tab === "mine" &&
+          mine?.map((space) => (
+            <SpaceCard
+              key={space.id}
+              space={space}
+              detail={`${space.dimensions} tiles`}
+              menu={
+                <Menu label={`Options for ${space.name}`}>
+                  <Link href={`/space/${space.id}/edit`} role="menuitem" className="menu-item">
+                    Edit furniture
+                  </Link>
+                  <MenuItem onClick={() => setSettingsFor(space)}>Settings</MenuItem>
+                  <MenuItem onClick={() => copyInvite(space)}>Copy invite link</MenuItem>
+                  <MenuItem danger onClick={() => deleteSpace(space)}>
+                    Delete
+                  </MenuItem>
+                </Menu>
+              }
+            />
+          ))}
+
+        {tab === "joined" &&
+          joined?.map((space) => (
+            <SpaceCard
+              key={space.id}
+              space={space}
+              detail={[`by ${space.ownerUsername}`, visitedLabel(space.lastVisitedAt)].filter(Boolean).join(" · ")}
+              menu={
+                <Menu label={`Options for ${space.name}`}>
+                  <MenuItem danger onClick={() => leaveSpace(space)}>
+                    Leave space
+                  </MenuItem>
+                </Menu>
+              }
+            />
+          ))}
+
+        {tab === "explore" &&
+          explore?.map((space) => (
+            <SpaceCard key={space.id} space={space} detail={`by ${space.ownerUsername} · ${space.dimensions} tiles`} />
+          ))}
       </div>
+
+      {notice && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2">
+          <span className="chip">
+            <span className="status-dot bg-success" />
+            {notice}
+          </span>
+        </div>
+      )}
 
       {showCreate && (
         <CreateSpaceDialog
           onClose={() => setShowCreate(false)}
           onCreated={(spaceId) => router.push(`/space/${spaceId}`)}
+        />
+      )}
+
+      {settingsFor && (
+        <SpaceSettingsDialog
+          space={settingsFor}
+          onClose={() => setSettingsFor(null)}
+          onChanged={(changes) => {
+            setSettingsFor((prev) => (prev ? { ...prev, ...changes } : prev));
+            setMine((prev) => prev?.map((s) => (s.id === settingsFor.id ? { ...s, ...changes } : s)) ?? null);
+          }}
         />
       )}
 

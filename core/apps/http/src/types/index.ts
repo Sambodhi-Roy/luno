@@ -15,15 +15,28 @@ export const updateMetadataSchema = z.object({
   avatarId: z.string(),
 });
 
+// Public spaces are listed in Explore and open to everyone signed in; private ones need an invite link
+const visibilitySchema = z.enum(["Public", "Private"]);
+
 export const createSpaceSchema = z
   .object({
     name: z.string().min(3).max(30),
     // "<width>x<height>" in tiles; defaults to the map's size when mapId is given
     dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/).optional(),
     mapId: z.string().optional(),
+    visibility: visibilitySchema.default("Private"),
   })
   .refine((data) => data.dimensions || data.mapId, {
     message: "Either dimensions or mapId is required",
+  });
+
+export const updateSpaceSchema = z
+  .object({
+    name: z.string().min(3).max(30).optional(),
+    visibility: visibilitySchema.optional(),
+  })
+  .refine((data) => data.name !== undefined || data.visibility !== undefined, {
+    message: "Nothing to update",
   });
 
 export const addElementSchema = z.object({

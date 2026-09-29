@@ -101,6 +101,31 @@
   @apply size-2 rounded-full;
 }
 
+/* Dropdown opened from a ⋯ button; its parent must be `relative` */
+@utility menu {
+  @apply card absolute top-full right-0 z-20 mt-1 flex min-w-44 flex-col overflow-hidden py-1;
+}
+
+@utility menu-item {
+  @apply hover-tint px-3 py-2 text-left text-sm text-copy;
+}
+
+/* Tab button; the selected one is marked with aria-selected="true" */
+@utility tab {
+  @apply hover-tint rounded-lg px-3 py-1.5 text-sm font-medium text-copy-lighter;
+  &[aria-selected="true"] {
+    @apply bg-foreground text-copy;
+  }
+}
+
+/* Selectable option tile (map picker, public/private choice); the chosen one has aria-pressed="true" */
+@utility option-tile {
+  @apply hover-tint rounded-xl border border-border text-left;
+  &[aria-pressed="true"] {
+    @apply border-primary ring-1 ring-primary;
+  }
+}
+
 @utility field {
   @apply w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-copy outline-none placeholder:text-copy-lighter focus:border-primary;
 }

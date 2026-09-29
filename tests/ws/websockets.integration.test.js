@@ -1,7 +1,7 @@
 // WebSocket contract for core/apps/ws (needs it running on :3002 alongside the API).
 const WebSocket = require("ws");
 const { createAdmin, createUser } = require("../_helpers/auth.helper");
-const { createSpace, addElement, removeElement } = require("../_helpers/space.helper");
+const { createSpace, addElement, removeElement, getSpace, acceptInvite } = require("../_helpers/space.helper");
 const { createElement } = require("../_helpers/admin.helper");
 const { waitForMessage } = require("../_helpers/ws.helper");
 
@@ -38,7 +38,7 @@ describe("Websocket integration", () => {
     admin = await createAdmin();
     user = await createUser();
 
-    const spaceRes = await createSpace(user.token, "WS Space", "100x200");
+    const spaceRes = await createSpace(user.token, "WS Space", "100x200", undefined, "Public");
     spaceId = spaceRes.data.spaceId;
 
     ws1 = await connect(ws1Messages);
@@ -164,6 +164,24 @@ describe("Websocket rules", () => {
     expect(await closed).toBe(4004);
   });
 
+  test("Joining a private space needs an invite", async () => {
+    const space = await createSpace(user.token, "WS Private", "10x10");
+    const spaceId = space.data.spaceId;
+
+    const refused = await open();
+    const closed = waitForClose(refused.ws);
+    send(refused.ws, "join", { spaceId, token: admin.token });
+    expect((await waitForMessage(refused.messages)).type).toBe("error");
+    expect(await closed).toBe(4003);
+
+    const { inviteCode } = (await getSpace(user.token, spaceId)).data;
+    expect((await acceptInvite(admin.token, inviteCode)).status).toBe(200);
+
+    const member = await open();
+    send(member.ws, "join", { spaceId, token: admin.token });
+    expect((await waitForMessage(member.messages)).type).toBe("space-joined");
+  });
+
   test("Moving before joining returns an error", async () => {
     const { ws, messages } = await open();
     send(ws, "movement", { x: 1, y: 1 });
@@ -191,7 +209,7 @@ describe("Websocket rules", () => {
   });
 
   test("Joining again from another tab replaces the first session without a leave event", async () => {
-    const space = await createSpace(user.token, "WS Tabs", "10x10");
+    const space = await createSpace(user.token, "WS Tabs", "10x10", undefined, "Public");
     const spaceId = space.data.spaceId;
 
     const watcher = await open();
@@ -233,7 +251,7 @@ describe("Live furniture updates", () => {
   beforeAll(async () => {
     owner = await createUser();
     visitor = await createAdmin();
-    const space = await createSpace(owner.token, "WS Build", "10x10");
+    const space = await createSpace(owner.token, "WS Build", "10x10", undefined, "Public");
     spaceId = space.data.spaceId;
     const element = await createElement(visitor.token, { isStatic: true });
     elementId = element.data.id;

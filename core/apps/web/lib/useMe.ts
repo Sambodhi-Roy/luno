@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "./api";
 import type { Me } from "./types";
 
+function loginUrl() {
+  const here = window.location.pathname + window.location.search;
+  return here === "/" ? "/login" : `/login?next=${encodeURIComponent(here)}`;
+}
+
 // Client-side auth guard: loads the signed-in user and sends them to /login when the cookie is missing or expired
 export function useMe({ redirectToLogin = true } = {}) {
   const router = useRouter();
@@ -27,7 +32,8 @@ export function useMe({ redirectToLogin = true } = {}) {
         if (!active) return;
         setMe(null);
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-          if (redirectToLogin) router.replace("/login");
+          // Come back here after signing in (e.g. an invite link opened while signed out)
+          if (redirectToLogin) router.replace(loginUrl());
         } else {
           setError(e instanceof Error ? e.message : "Something went wrong");
         }

@@ -30,7 +30,7 @@ describe("Arena (elements inside a space)", () => {
       ],
     });
 
-    const spaceRes = await createSpace(user.token, "Arena", "100x200", mapRes.data.id);
+    const spaceRes = await createSpace(user.token, "Arena", "100x200", mapRes.data.id, "Public");
     spaceId = spaceRes.data.spaceId;
   });
 
@@ -46,7 +46,7 @@ describe("Arena (elements inside a space)", () => {
     expect(res.data.elements.length).toBe(3);
   });
 
-  test("Other signed-in users can view the space", async () => {
+  test("Other signed-in users can view a public space", async () => {
     const res = await getSpace(admin.token, spaceId);
     expect(res.status).toBe(200);
   });

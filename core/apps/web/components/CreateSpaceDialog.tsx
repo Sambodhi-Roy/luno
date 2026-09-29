@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
-import type { MapSummary } from "@/lib/types";
+import type { MapSummary, Visibility } from "@/lib/types";
 import { Button, ErrorText, Input, Label, Modal } from "./ui";
+import { VisibilityPicker } from "./VisibilityPicker";
 
 export function CreateSpaceDialog({
   onClose,
@@ -15,6 +16,7 @@ export function CreateSpaceDialog({
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
   const [mapId, setMapId] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<Visibility>("Private");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -34,7 +36,7 @@ export function CreateSpaceDialog({
     setError(null);
     try {
       // The space takes its size and default furniture from the chosen map
-      const res = await api<{ spaceId: string }>("/space", { method: "POST", body: { name, mapId } });
+      const res = await api<{ spaceId: string }>("/space", { method: "POST", body: { name, mapId, visibility } });
       onCreated(res.spaceId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create space");
@@ -68,9 +70,8 @@ export function CreateSpaceDialog({
                 type="button"
                 key={map.id}
                 onClick={() => setMapId(map.id)}
-                className={`overflow-hidden rounded-xl border text-left ${
-                  mapId === map.id ? "border-primary ring-1 ring-primary" : "hover-tint border-border"
-                }`}
+                aria-pressed={mapId === map.id}
+                className="option-tile overflow-hidden"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- pixel-art thumbnail served from /public */}
                 <img src={map.thumbnail} alt="" className="pixelated aspect-video w-full object-cover" />
@@ -82,6 +83,8 @@ export function CreateSpaceDialog({
             ))}
           </div>
         </div>
+
+        <VisibilityPicker value={visibility} onChange={setVisibility} />
 
         <ErrorText>{error}</ErrorText>
 

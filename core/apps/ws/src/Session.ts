@@ -18,7 +18,10 @@ const MIN_STEP_INTERVAL_MS = STEP_MS / 2;
 // Application close codes (4000-4999 are free for app use)
 const CLOSE_REPLACED = 4000;
 const CLOSE_UNAUTHORIZED = 4001;
+const CLOSE_FORBIDDEN = 4003;
 const CLOSE_NOT_FOUND = 4004;
+
+type JoiningUser = { username: string; avatarUrl: string | null; canAccess: boolean };
 
 /** One WebSocket connection. It joins at most one space. */
 export class Session {
@@ -88,13 +91,7 @@ export class Session {
     if (!userId) return this.reject(CLOSE_UNAUTHORIZED, "Unauthorized");
 
     // Independent lookups, so run them together (each is a round trip to the database)
-    const [user, loadedRoom] = await Promise.all([
-      client.user.findUnique({
-        where: { id: userId },
-        select: { username: true, avatar: { select: { imageUrl: true } } },
-      }),
-      this.rooms.get(spaceId),
-    ]);
+    const [user, loadedRoom] = await Promise.all([findJoiningUser(userId, spaceId), this.rooms.get(spaceId)]);
 
     // The room can be released while we await (last person left), so retry until we hold a live one
     let room = loadedRoom;
@@ -105,6 +102,10 @@ export class Session {
       return this.reject(CLOSE_UNAUTHORIZED, "Unauthorized");
     }
     if (!room) return this.reject(CLOSE_NOT_FOUND, "Space not found");
+    if (!user.canAccess) {
+      this.rooms.releaseIfEmpty(room);
+      return this.reject(CLOSE_FORBIDDEN, "This space is private");
+    }
     if (this.ws.readyState !== WebSocket.OPEN) return this.rooms.releaseIfEmpty(room);
 
     // Same user joining again (another tab): the new session takes over
@@ -113,7 +114,7 @@ export class Session {
 
     this.userId = userId;
     this.username = user.username;
-    this.avatarUrl = user.avatar?.imageUrl ?? null;
+    this.avatarUrl = user.avatarUrl;
     ({ x: this.x, y: this.y } = room.findSpawn());
     this.room = room;
     room.add(this);
@@ -168,4 +169,24 @@ export class Session {
     }
     this.rooms.releaseIfEmpty(room);
   }
+}
+
+/**
+ * The joining user's name and avatar, plus whether they may enter the space: its owner, anyone when it's
+ * public, or a member. Same rule as canAccess in apps/http. Read on every join rather than cached on the
+ * room, so a space switched to private takes effect for the next join. One round trip.
+ */
+async function findJoiningUser(userId: string, spaceId: string): Promise<JoiningUser | null> {
+  const rows = await client.$queryRaw<JoiningUser[]>`
+    SELECT u.username, a."imageUrl" AS "avatarUrl",
+      EXISTS (
+        SELECT 1 FROM "Space" s
+        WHERE s.id = ${spaceId}
+          AND (s."creatorId" = u.id OR s.visibility = 'Public'
+            OR EXISTS (SELECT 1 FROM "SpaceMember" m WHERE m."spaceId" = s.id AND m."userId" = u.id))
+      ) AS "canAccess"
+    FROM "User" u
+    LEFT JOIN "Avatar" a ON a.id = u."avatarId"
+    WHERE u.id = ${userId}`;
+  return rows[0] ?? null;
 }

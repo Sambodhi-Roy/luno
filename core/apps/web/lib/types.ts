@@ -21,12 +21,36 @@ export type MapSummary = {
   tmjUrl: string | null;
 };
 
+// Public spaces are listed in Explore; private ones need an invite link
+export type Visibility = "Public" | "Private";
+
 export type SpaceSummary = {
   id: string;
   name: string;
   dimensions: string;
   thumbnail: string | null;
   mapId: string | null;
+  visibility: Visibility;
+};
+
+// One of the caller's own spaces (GET /space/all)
+export type OwnedSpaceSummary = SpaceSummary & {
+  inviteCode: string;
+};
+
+// A space owned by someone else: joined (with lastVisitedAt) or listed in Explore (lastVisitedAt null)
+export type OtherSpaceSummary = SpaceSummary & {
+  ownerUsername: string;
+  lastVisitedAt: string | null;
+};
+
+export type InvitePreview = {
+  spaceId: string;
+  name: string;
+  dimensions: string;
+  thumbnail: string | null;
+  ownerUsername: string;
+  isOwner: boolean;
 };
 
 export type Element = {
@@ -51,5 +75,8 @@ export type SpaceDetail = {
   mapId: string | null;
   tmjUrl: string | null;
   creatorId: string;
+  visibility: Visibility;
+  // Only sent to the owner
+  inviteCode?: string;
   elements: SpaceElement[];
 };

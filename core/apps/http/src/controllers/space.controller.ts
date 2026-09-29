@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
-import { createSpaceSchema, addElementSchema, deleteElementSchema } from "../types/index.js";
+import { randomUUID } from "node:crypto";
+import { createSpaceSchema, addElementSchema, deleteElementSchema, updateSpaceSchema } from "../types/index.js";
 import { notifySpace } from "../lib/realtime.js";
+import { canAccess } from "../lib/spaceAccess.js";
 
 const parseDimensions = (dimensions: string) => {
   const [widthStr, heightStr] = dimensions.split("x") as [string, string];
@@ -20,7 +22,7 @@ export const createSpace = async (req: Request, res: Response) => {
     });
   }
 
-  const { name, dimensions, mapId } = parsedData.data;
+  const { name, dimensions, mapId, visibility } = parsedData.data;
 
   const creatorId = req.user?.id;
 
@@ -56,6 +58,7 @@ export const createSpace = async (req: Request, res: Response) => {
           width,
           height,
           creatorId,
+          visibility,
           ...(map && { mapId: map.id, thumbnail: map.thumbnail }),
         },
       });
@@ -110,7 +113,10 @@ export const getAllSpaces = async (req: Request, res: Response) => {
         height: true,
         thumbnail: true,
         mapId: true,
+        visibility: true,
+        inviteCode: true,
       },
+      orderBy: { createdAt: "desc" },
     });
 
     const formattedSpaces = spaces.map((space) => ({
@@ -119,6 +125,9 @@ export const getAllSpaces = async (req: Request, res: Response) => {
       dimensions: `${space.width}x${space.height}`,
       thumbnail: space.thumbnail ?? null,
       mapId: space.mapId ?? null,
+      visibility: space.visibility,
+      // Safe to include: this list only ever holds the caller's own spaces
+      inviteCode: space.inviteCode,
     }));
 
     return res.status(200).json({ spaces: formattedSpaces });
@@ -129,9 +138,16 @@ export const getAllSpaces = async (req: Request, res: Response) => {
   }
 };
 
-// Any signed-in user can view a space, since spaces are joinable
+// Owners, members, and anyone for a public space (see canAccess)
 export const getSpace = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
   const { spaceId } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({
+      message: "Unauthorized",
+    });
+  }
 
   if (!spaceId) {
     return res.status(400).json({
@@ -158,6 +174,12 @@ export const getSpace = async (req: Request, res: Response) => {
       });
     }
 
+    if (!(await canAccess(space, userId))) {
+      return res.status(403).json({
+        message: "This space is private",
+      });
+    }
+
     const elements = space.elements.map((se) => ({
       id: se.id,
       element: {
@@ -178,9 +200,124 @@ export const getSpace = async (req: Request, res: Response) => {
       mapId: space.mapId ?? null,
       tmjUrl: space.map?.tmjUrl ?? null,
       creatorId: space.creatorId,
+      visibility: space.visibility,
+      // The invite link is the key to a private space, so only its owner sees it
+      ...(space.creatorId === userId && { inviteCode: space.inviteCode }),
       elements,
     });
   } catch (e) {
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const updateSpace = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const { spaceId } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({
+      message: "Unauthorized",
+    });
+  }
+
+  const parsed = updateSpaceSchema.safeParse(req.body);
+  if (!spaceId || !parsed.success) {
+    return res.status(400).json({
+      message: "Validation failed",
+    });
+  }
+
+  const { name, visibility } = parsed.data;
+
+  try {
+    const space = await client.space.findUnique({
+      where: { id: spaceId },
+      select: { creatorId: true },
+    });
+
+    if (!space) {
+      return res.status(404).json({
+        message: "Space not found",
+      });
+    }
+
+    if (space.creatorId !== userId) {
+      return res.status(403).json({
+        message: "You do not have permission to modify this space",
+      });
+    }
+
+    // People already inside a space that turns private stay until they leave; new joins are checked
+    const updated = await client.space.update({
+      where: { id: spaceId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(visibility !== undefined && { visibility }),
+      },
+      select: { id: true, name: true, visibility: true },
+    });
+
+    return res.status(200).json({
+      message: "Space updated successfully",
+      space: updated,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// A new code makes old invite links stop working; people who already joined stay members
+export const resetInviteCode = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const { spaceId } = req.params;
+
+  if (!userId) {
+    return res.status(401).json({
+      message: "Unauthorized",
+    });
+  }
+
+  if (!spaceId) {
+    return res.status(400).json({
+      message: "SpaceId param is required",
+    });
+  }
+
+  try {
+    const space = await client.space.findUnique({
+      where: { id: spaceId },
+      select: { creatorId: true },
+    });
+
+    if (!space) {
+      return res.status(404).json({
+        message: "Space not found",
+      });
+    }
+
+    if (space.creatorId !== userId) {
+      return res.status(403).json({
+        message: "You do not have permission to modify this space",
+      });
+    }
+
+    const { inviteCode } = await client.space.update({
+      where: { id: spaceId },
+      data: { inviteCode: randomUUID().replaceAll("-", "") },
+      select: { inviteCode: true },
+    });
+
+    return res.status(200).json({
+      message: "Invite link reset",
+      inviteCode,
+    });
+  } catch (e) {
+    console.error(e);
     return res.status(500).json({
       message: "Internal Server Error",
     });

@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
+import { safeNextPath } from "@/lib/navigation";
 import { Button, ErrorText, Input, Label } from "./ui";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
+  // Set when a signed-out user was sent here from a page, e.g. an invite link
+  const next = useSearchParams().get("next");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       // Signup also sets the cookie, but signing in keeps both flows on one code path
       if (isSignup) await api("/user/signup", { method: "POST", body: { username, password } });
       await api("/user/signin", { method: "POST", body: { username, password } });
-      router.replace("/dashboard");
+      router.replace(safeNextPath(next));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setSubmitting(false);
@@ -76,7 +79,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
         <p className="text-center text-sm text-copy-lighter">
           {isSignup ? "Already have an account? " : "New here? "}
-          <Link href={isSignup ? "/login" : "/signup"} className="text-primary hover:underline">
+          <Link
+            href={`${isSignup ? "/login" : "/signup"}${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+            className="text-primary hover:underline">
             {isSignup ? "Log in" : "Create an account"}
           </Link>
         </p>

@@ -13,7 +13,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "promote-admin": "tsx scripts/set-role.ts Admin",
+    "demote-admin": "tsx scripts/set-role.ts User"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
