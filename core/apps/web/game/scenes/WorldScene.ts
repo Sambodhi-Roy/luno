@@ -2,6 +2,7 @@ import * as Phaser from "phaser";
 import { buildCollisionGrid, type CollisionGrid, type TiledMap } from "@repo/protocol/rules";
 import type { RemoteUser, SpaceElement } from "@repo/protocol";
 import { DEFAULT_AVATAR_URL } from "@/lib/avatars";
+import { themeColor } from "@/lib/theme";
 import type { Element, Me, SpaceDetail } from "@/lib/types";
 import { animKey, Avatar, TILE } from "../entities/Avatar";
 import { LocalPlayer } from "../entities/LocalPlayer";
@@ -9,7 +10,8 @@ import { NetworkManager, type ConnectionStatus } from "../network/NetworkManager
 import { BuildTool } from "../tools/BuildTool";
 
 const MIN_ZOOM = 1.5;
-const FALLBACK_MAP_URL = "/assets/maps/office/office.tmj";
+// Texture for the plain floor drawn under spaces that have no Tiled map
+const FLOOR_KEY = "floor:plain";
 // Used for anyone without an avatar, and when an avatar's sheet fails to load
 const DEFAULT_CHARACTER_URL = DEFAULT_AVATAR_URL;
 // Every character sheet shares this layout (Pipoya / RPG Maker): 32x32 frames, 3 per row, one row per direction.
@@ -86,19 +88,22 @@ export class WorldScene extends Phaser.Scene {
 
   preload() {
     const { space } = this.ctx;
-    const mapUrl = space.tmjUrl ?? FALLBACK_MAP_URL;
-    this.load.tilemapTiledJSON("map", mapUrl);
+    const mapUrl = space.tmjUrl;
+    // Spaces created with dimensions only (possible through the API) have no map; create() draws a plain floor
+    if (mapUrl) {
+      this.load.tilemapTiledJSON("map", mapUrl);
 
-    // Tileset image paths inside a .tmj point at the artist's folders, so each image is loaded by file name
-    // from the folder the .tmj lives in, keyed by the tileset name used in Tiled
-    this.load.once("filecomplete-tilemapJSON-map", () => {
-      const tilesets: TiledTileset[] = this.cache.tilemap.get("map").data.tilesets;
-      const mapFolder = mapUrl.slice(0, mapUrl.lastIndexOf("/") + 1);
-      for (const ts of tilesets) {
-        const fileName = ts.image.split("/").pop();
-        this.load.image(ts.name, `${mapFolder}${fileName}`);
-      }
-    });
+      // Tileset image paths inside a .tmj point at the artist's folders, so each image is loaded by file name
+      // from the folder the .tmj lives in, keyed by the tileset name used in Tiled
+      this.load.once("filecomplete-tilemapJSON-map", () => {
+        const tilesets: TiledTileset[] = this.cache.tilemap.get("map").data.tilesets;
+        const mapFolder = mapUrl.slice(0, mapUrl.lastIndexOf("/") + 1);
+        for (const ts of tilesets) {
+          const fileName = ts.image.split("/").pop();
+          this.load.image(ts.name, `${mapFolder}${fileName}`);
+        }
+      });
+    }
 
     for (const { element } of space.elements) {
       const key = elementKey(element.id);
@@ -115,17 +120,22 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     const { space } = this.ctx;
-    const map = this.make.tilemap({ key: "map" });
-    const tilesets = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
-
-    for (const layerData of map.layers) {
-      const layer = map.createLayer(layerData.name, tilesets, 0, 0);
-      // The "Collision" layer only marks blocked tiles; it isn't meant to be seen
-      if (layer && layerData.name === "Collision") layer.setVisible(false);
-    }
-
     [this.spaceWidth, this.spaceHeight] = space.dimensions.split("x").map(Number) as [number, number];
-    this.tiledMap = space.tmjUrl ? (this.cache.tilemap.get("map").data as TiledMap) : null;
+
+    if (space.tmjUrl) {
+      const map = this.make.tilemap({ key: "map" });
+      const tilesets = map.tilesets.map((ts) => map.addTilesetImage(ts.name, ts.name)!);
+      for (const layerData of map.layers) {
+        const layer = map.createLayer(layerData.name, tilesets, 0, 0);
+        // The "Collision" layer only marks blocked tiles; it isn't meant to be seen
+        if (layer && layerData.name === "Collision") layer.setVisible(false);
+      }
+      this.tiledMap = this.cache.tilemap.get("map").data as TiledMap;
+      this.setUpCamera(map.widthInPixels, map.heightInPixels);
+    } else {
+      this.drawPlainFloor();
+      this.setUpCamera(this.spaceWidth * TILE, this.spaceHeight * TILE);
+    }
     for (const placement of space.elements) this.drawElement(placement);
     this.rebuildGrid();
 
@@ -134,7 +144,6 @@ export class WorldScene extends Phaser.Scene {
     for (const key of this.textures.getTextureKeys()) {
       if (key.startsWith(CHARACTER_PREFIX)) this.createCharacterAnimations(key);
     }
-    this.setUpCamera(map);
 
     if (this.ctx.mode === "play") {
       this.connect();
@@ -411,15 +420,30 @@ export class WorldScene extends Phaser.Scene {
     return load;
   }
 
-  private setUpCamera(map: Phaser.Tilemaps.Tilemap) {
+  /** A grid of plain tiles the size of the space, so a space without a map still shows where you can walk. */
+  private drawPlainFloor() {
+    if (!this.textures.exists(FLOOR_KEY)) {
+      const g = this.make.graphics({}, false);
+      g.fillStyle(Phaser.Display.Color.HexStringToColor(themeColor("raised")).color);
+      g.fillRect(0, 0, TILE, TILE);
+      g.lineStyle(1, Phaser.Display.Color.HexStringToColor(themeColor("border")).color);
+      g.strokeRect(0.5, 0.5, TILE - 1, TILE - 1);
+      g.generateTexture(FLOOR_KEY, TILE, TILE);
+      g.destroy();
+    }
+    this.add.tileSprite(0, 0, this.spaceWidth * TILE, this.spaceHeight * TILE, FLOOR_KEY).setOrigin(0, 0).setDepth(-1);
+  }
+
+  /** Keeps the camera inside the world (the map, or the plain floor), in pixels. */
+  private setUpCamera(worldWidth: number, worldHeight: number) {
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-    cam.centerOn(map.widthInPixels / 2, map.heightInPixels / 2);
+    cam.setBounds(0, 0, worldWidth, worldHeight);
+    cam.centerOn(worldWidth / 2, worldHeight / 2);
 
     // Zoom in enough that the map always covers the viewport (no empty margins on big screens).
     // The editor may be zoomed in further, so only raise the zoom when it falls below the fit.
     const fit = () => {
-      this.fitZoom = Math.max(MIN_ZOOM, this.scale.width / map.widthInPixels, this.scale.height / map.heightInPixels);
+      this.fitZoom = Math.max(MIN_ZOOM, this.scale.width / worldWidth, this.scale.height / worldHeight);
       cam.setZoom(Math.max(this.ctx.mode === "edit" ? cam.zoom : 0, this.fitZoom));
     };
     fit();
