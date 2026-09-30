@@ -11,6 +11,8 @@ export type GameController = {
   destroy: () => void;
   // Edit mode only: the furniture to place, or null for none
   setBuildTool: (element: Element | null) => void;
+  // Off while a dialog is open over the game
+  setKeyboardEnabled: (enabled: boolean) => void;
 };
 
 // This module is only ever loaded through a dynamic import in GameCanvas, so Phaser never runs on the server
@@ -31,6 +33,7 @@ export async function createGame(container: HTMLElement, options: GameOptions): 
   // and apply it then
   let scene: WorldScene | null = null;
   let buildTool: Element | null = null;
+  let keyboardEnabled = true;
 
   // Added (not listed in the config) so the space and callbacks can be passed in as scene data
   game.scene.add("WorldScene", WorldScene, true, {
@@ -38,6 +41,7 @@ export async function createGame(container: HTMLElement, options: GameOptions): 
     onCreated: (created: WorldScene) => {
       scene = created;
       void created.setBuildTool(buildTool);
+      created.setKeyboardEnabled(keyboardEnabled);
     },
   });
 
@@ -46,6 +50,10 @@ export async function createGame(container: HTMLElement, options: GameOptions): 
     setBuildTool: (element) => {
       buildTool = element;
       if (scene) void scene.setBuildTool(element);
+    },
+    setKeyboardEnabled: (enabled) => {
+      keyboardEnabled = enabled;
+      scene?.setKeyboardEnabled(enabled);
     },
   };
 }

@@ -11,7 +11,8 @@ export type ConnectionStatus =
   | { state: "connecting" }
   | { state: "connected" }
   | { state: "reconnecting" }
-  | { state: "closed"; reason: string };
+  // `code` is the WebSocket close code from apps/ws (4000 replaced, 4001 unauthorized, 4003 forbidden, 4004 not found)
+  | { state: "closed"; code: number; reason: string };
 
 type PayloadOf<T extends ServerMessageType> = Extract<ServerMessage, { type: T }>["payload"];
 type Handler<T extends ServerMessageType> = (payload: PayloadOf<T>) => void;
@@ -61,7 +62,7 @@ export class NetworkManager {
     ws.onclose = (event) => {
       if (this.stopped) return;
       if (TERMINAL_CLOSE_CODES.has(event.code)) {
-        this.onStatus({ state: "closed", reason: this.lastError ?? "Disconnected" });
+        this.onStatus({ state: "closed", code: event.code, reason: this.lastError ?? "Disconnected" });
         return;
       }
       const delay = RECONNECT_DELAYS_MS[Math.min(this.attempt, RECONNECT_DELAYS_MS.length - 1)];
