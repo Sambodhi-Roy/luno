@@ -95,6 +95,10 @@ export const signup = async (req: Request, res: Response) => {
       },
     });
   } catch (e) {
+    // Two signups for the same name at once: the unique index (case-insensitive) rejects the second
+    if ((e as { code?: string }).code === "P2002") {
+      return res.status(409).json({ message: "Username already taken" });
+    }
     console.error(e);
     return res.status(500).json({ message: "Internal server error" });
   }

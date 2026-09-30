@@ -15,7 +15,8 @@ datasource db {
 
 model User {
   id       String  @id @unique @default(cuid())
-  username String  @unique
+  // citext: unique and matched regardless of case ("Sam" and "sam" are the same account), shown as typed
+  username String  @unique @db.Citext
   password String  
   avatarId String?
   role     Role
