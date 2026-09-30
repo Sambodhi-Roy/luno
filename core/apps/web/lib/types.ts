@@ -1,5 +1,7 @@
 // Response shapes of the REST API (core/apps/http). Coordinates and sizes are in tiles.
 
+import type { CustomMap } from "@repo/protocol/rules";
+
 export type Avatar = {
   id: string;
   name: string | null;
@@ -77,6 +79,8 @@ export type SpaceDetail = {
   dimensions: string;
   mapId: string | null;
   tmjUrl: string | null;
+  // Floors and walls of a map built in the editor; null for uploaded maps and plain spaces
+  customMap: CustomMap | null;
   creatorId: string;
   visibility: Visibility;
   // Only sent to the owner

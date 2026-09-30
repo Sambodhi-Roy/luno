@@ -239,7 +239,7 @@ function Dashboard() {
         <CreateSpaceDialog
           isAdmin={me.role === "Admin"}
           onClose={() => setShowCreate(false)}
-          onCreated={(spaceId) => router.push(`/space/${spaceId}`)}
+          onCreated={(path) => router.push(path)}
         />
       )}
 

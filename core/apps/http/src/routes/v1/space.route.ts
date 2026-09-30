@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import {
   addElementToSpace,
   createSpace,
@@ -18,6 +19,8 @@ import {
   leaveSpace,
   visitSpace,
 } from "../../controllers/membership.controller.js";
+import { updateCustomMap, uploadSpaceThumbnail } from "../../controllers/customMap.controller.js";
+import { MAX_IMAGE_BYTES, receiveFiles } from "../../lib/uploads.js";
 import { authenticateUser } from "../../middleware/userAuth.middleware.js";
 
 export const spaceRouter = Router();
@@ -52,3 +55,13 @@ spaceRouter.post("/:spaceId/visit", authenticateUser, visitSpace);
 spaceRouter.post("/:spaceId/invite/reset", authenticateUser, resetInviteCode);
 
 spaceRouter.delete("/:spaceId/membership", authenticateUser, leaveSpace);
+
+// Custom maps: the editor saves floors and walls, and uploads a rendered cover
+spaceRouter.put("/:spaceId/custom-map", authenticateUser, updateCustomMap);
+
+spaceRouter.put(
+  "/:spaceId/thumbnail",
+  authenticateUser,
+  receiveFiles(multer({ limits: { fileSize: MAX_IMAGE_BYTES, files: 1 } }).single("file")),
+  uploadSpaceThumbnail
+);

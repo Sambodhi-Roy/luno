@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_CUSTOM_STYLE, type CustomMap } from "./rules.js";
 
 // Wire format between the browser and apps/ws: JSON `{ type, payload }`.
 // All positions are tile coordinates.
@@ -46,11 +47,19 @@ export const spaceElementSchema = z.object({
 
 export type SpaceElement = z.infer<typeof spaceElementSchema>;
 
+/* ---------- Custom maps (shared by the API, api -> ws events and server -> client messages) ---------- */
+
+const styleIds = z.array(z.number().int().min(0).max(MAX_CUSTOM_STYLE));
+
+/** A custom map's layout; callers also check both arrays hold width * height entries. */
+export const customMapSchema = z.object({ floor: styleIds, walls: styleIds }) satisfies z.ZodType<CustomMap>;
+
 /* ---------- apps/http -> apps/ws (internal, authenticated with INTERNAL_SECRET) ---------- */
 
 export const internalEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("element-added"), payload: spaceElementSchema }),
   z.object({ type: z.literal("element-removed"), payload: z.object({ id: z.string().min(1) }) }),
+  z.object({ type: z.literal("map-updated"), payload: customMapSchema }),
 ]);
 
 export type InternalEvent = z.infer<typeof internalEventSchema>;
@@ -76,6 +85,8 @@ export type ServerMessage =
   // The space's furniture changed (placed or removed through the API)
   | { type: "element-added"; payload: SpaceElement }
   | { type: "element-removed"; payload: { id: string } }
+  // The owner changed the custom map's floors or walls in the editor
+  | { type: "map-updated"; payload: CustomMap }
   | { type: "error"; payload: { message: string } };
 
 export type ServerMessageType = ServerMessage["type"];

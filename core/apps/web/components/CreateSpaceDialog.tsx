@@ -1,12 +1,16 @@
 "use client";
 
-import { Map as MapIcon } from "lucide-react";
+import { Map as MapIcon, PencilRuler } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
+import { CUSTOM_MAP_SIZES, type CustomMapSize } from "@repo/protocol/rules";
 import { api, friendlyError } from "@/lib/api";
 import { spaceSize } from "@/lib/format";
 import type { MapSummary, Visibility } from "@/lib/types";
 import { Button, ErrorText, Hint, Input, Label, Modal, Skeleton } from "./ui";
 import { VisibilityPicker } from "./VisibilityPicker";
+
+// The map choice for building one in the editor instead of starting from a premade map
+const CUSTOM = "custom";
 
 export function CreateSpaceDialog({
   isAdmin,
@@ -15,11 +19,14 @@ export function CreateSpaceDialog({
 }: {
   isAdmin: boolean;
   onClose: () => void;
-  onCreated: (spaceId: string) => void;
+  // Where to go next: the space itself, or the editor for a custom map
+  onCreated: (path: string) => void;
 }) {
   const formId = useId();
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
+  // A premade map's id, or CUSTOM to build one in the editor
   const [mapId, setMapId] = useState<string | null>(null);
+  const [size, setSize] = useState<CustomMapSize>("medium");
   const [name, setName] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("Private");
   const [error, setError] = useState<string | null>(null);
@@ -40,9 +47,11 @@ export function CreateSpaceDialog({
     setSubmitting(true);
     setError(null);
     try {
-      // The space takes its size and default furniture from the chosen map
-      const res = await api<{ spaceId: string }>("/space", { method: "POST", body: { name, mapId, visibility } });
-      onCreated(res.spaceId);
+      // A premade map gives the space its size and default furniture; a custom one starts as an empty room
+      const custom = mapId === CUSTOM;
+      const body = custom ? { name, layout: "custom", size, visibility } : { name, mapId, visibility };
+      const res = await api<{ spaceId: string }>("/space", { method: "POST", body });
+      onCreated(custom ? `/space/${res.spaceId}/edit` : `/space/${res.spaceId}`);
     } catch (e) {
       setError(friendlyError(e, "Could not create the space"));
       setSubmitting(false);
@@ -52,7 +61,7 @@ export function CreateSpaceDialog({
   return (
     <Modal
       title="Create a space"
-      description="Pick a map to start from. You can move the furniture around later."
+      description="Start from a ready-made map, or build your own. You can move the furniture around later."
       onClose={onClose}
       busy={submitting}
       size="lg"
@@ -62,7 +71,7 @@ export function CreateSpaceDialog({
             Cancel
           </Button>
           <Button type="submit" form={formId} disabled={!mapId} busy={submitting}>
-            Create space
+            {mapId === CUSTOM ? "Create and build" : "Create space"}
           </Button>
         </>
       }
@@ -93,6 +102,20 @@ export function CreateSpaceDialog({
             </div>
           )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => setMapId(CUSTOM)}
+              aria-pressed={mapId === CUSTOM}
+              className="option-tile overflow-hidden"
+            >
+              <div className="thumb-fallback flex aspect-video w-full items-center justify-center text-primary-light">
+                <PencilRuler className="size-8" />
+              </div>
+              <div className="p-2.5">
+                <p className="truncate text-sm font-semibold">Custom map</p>
+                <p className="text-xs text-copy-lighter">Build your own</p>
+              </div>
+            </button>
             {maps === null &&
               !error &&
               [0, 1, 2].map((i) => <Skeleton key={i} className="aspect-4/3 rounded-xl" />)}
@@ -114,6 +137,29 @@ export function CreateSpaceDialog({
             ))}
           </div>
         </div>
+
+        {mapId === CUSTOM && (
+          <div>
+            <Label>Size</Label>
+            <div className="grid grid-cols-3 gap-3">
+              {(Object.keys(CUSTOM_MAP_SIZES) as CustomMapSize[]).map((key) => (
+                <button
+                  type="button"
+                  key={key}
+                  onClick={() => setSize(key)}
+                  aria-pressed={size === key}
+                  className="option-tile p-2.5"
+                >
+                  <p className="text-sm font-semibold capitalize">{key}</p>
+                  <p className="text-xs text-copy-lighter tabular-nums">
+                    {CUSTOM_MAP_SIZES[key].width}×{CUSTOM_MAP_SIZES[key].height} tiles
+                  </p>
+                </button>
+              ))}
+            </div>
+            <Hint>You&apos;ll go straight to the editor to paint floors and walls and add furniture.</Hint>
+          </div>
+        )}
 
         <VisibilityPicker value={visibility} onChange={setVisibility} />
 

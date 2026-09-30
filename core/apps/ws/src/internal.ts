@@ -3,12 +3,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { internalEventSchema } from "@repo/protocol";
 import type { RoomManager } from "./RoomManager.js";
 
-// apps/http reports furniture changes here so they can be pushed to everyone in the space.
+// apps/http reports furniture and custom map changes here so they can be pushed to everyone in the space.
 // Not for browsers: requests must carry the shared INTERNAL_SECRET.
 
 const ROUTE = /^\/internal\/spaces\/([^/]+)\/events$/;
-// Events are small JSON objects
-const MAX_BODY_BYTES = 16 * 1024;
+// Events are small JSON objects; the largest is a custom map (two arrays of one id per tile, a few KB)
+const MAX_BODY_BYTES = 64 * 1024;
 
 export async function handleInternalRequest(req: IncomingMessage, res: ServerResponse, rooms: RoomManager) {
   const match = req.method === "POST" ? ROUTE.exec(req.url ?? "") : null;
