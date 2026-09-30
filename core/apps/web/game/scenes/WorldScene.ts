@@ -1,14 +1,23 @@
 import * as Phaser from "phaser";
 import { buildCollisionGrid, type CollisionGrid, type TiledMap } from "@repo/protocol/rules";
 import type { RemoteUser, SpaceElement } from "@repo/protocol";
+import { DEFAULT_AVATAR_URL } from "@/lib/avatars";
 import type { Element, Me, SpaceDetail } from "@/lib/types";
-import { Avatar, TILE } from "../entities/Avatar";
+import { animKey, Avatar, TILE } from "../entities/Avatar";
 import { LocalPlayer } from "../entities/LocalPlayer";
 import { NetworkManager, type ConnectionStatus } from "../network/NetworkManager";
 import { BuildTool } from "../tools/BuildTool";
 
 const MIN_ZOOM = 1.5;
 const FALLBACK_MAP_URL = "/assets/maps/office/office.tmj";
+// Used for anyone without an avatar, and when an avatar's sheet fails to load
+const DEFAULT_CHARACTER_URL = DEFAULT_AVATAR_URL;
+// Every character sheet shares this layout (a 24-column sheet of 16x32 frames): idle frames 0-3, then walk
+// cycles of 6 frames starting at frame 48
+const CHARACTER_FRAME = { frameWidth: 16, frameHeight: 32 };
+const IDLE_FRAMES = { right: 0, up: 1, left: 2, down: 3 };
+const WALK_START = { right: 48, up: 54, left: 60, down: 66 };
+const WALK_FRAMES = 6;
 // How quickly the camera catches up with the player (0-1 per frame)
 const CAMERA_LERP = 0.1;
 // Editor camera: how far past the fitted zoom the wheel can zoom in, each wheel notch, and key pan speed
@@ -30,11 +39,15 @@ export type EditModeData = {
   mode: "edit";
   // Persist a change through the API. Resolve with the saved placement / true, or null / false on failure.
   onPlace: (elementId: string, x: number, y: number) => Promise<SpaceElement | null>;
-  onRemove: (spaceElementId: string) => Promise<boolean>;
+  // `undo` puts the same piece back in the same spot, for an Undo button
+  onRemove: (placement: SpaceElement, undo: () => void) => Promise<boolean>;
 };
 
-// What React passes to createGame
-export type GameOptions = { space: SpaceDetail; me: Me } & (PlayModeData | EditModeData);
+// What React passes to createGame. onLoadProgress reports asset loading from 0 to 1.
+export type GameOptions = { space: SpaceDetail; me: Me; onLoadProgress?: (progress: number) => void } & (
+  | PlayModeData
+  | EditModeData
+);
 
 export type WorldSceneData = GameOptions & {
   // Set by createGame: called at the end of create(), once the scene can take build-tool calls
@@ -51,6 +64,10 @@ export class WorldScene extends Phaser.Scene {
   private network: NetworkManager | null = null;
   private player: LocalPlayer | null = null;
   private readonly remotes = new Map<string, Avatar>();
+  // Players whose character sheet is still loading, kept up to date until their Avatar can be drawn
+  private readonly pendingRemotes = new Map<string, RemoteUser>();
+  // One load per character sheet, shared by everyone wearing it
+  private readonly characterLoads = new Map<string, Promise<string>>();
   // Furniture currently in the space, keyed by placement id
   private readonly placed = new Map<string, { data: SpaceElement; image: Phaser.GameObjects.Image }>();
   private buildTool: BuildTool | null = null;
@@ -88,10 +105,12 @@ export class WorldScene extends Phaser.Scene {
       if (!this.textures.exists(key)) this.load.image(key, element.imageUrl);
     }
 
-    this.load.spritesheet("adam", "/assets/characters/adam.png", {
-      frameWidth: 16,
-      frameHeight: 32,
-    });
+    // The default character, plus ours so we appear straight away; other players' sheets load as they join
+    this.load.spritesheet(characterKey(DEFAULT_CHARACTER_URL), DEFAULT_CHARACTER_URL, CHARACTER_FRAME);
+    const mine = this.ctx.me.avatar?.imageUrl;
+    if (mine) this.load.spritesheet(characterKey(mine), mine, CHARACTER_FRAME);
+
+    this.load.on(Phaser.Loader.Events.PROGRESS, (progress: number) => this.ctx.onLoadProgress?.(progress));
   }
 
   create() {
@@ -110,7 +129,11 @@ export class WorldScene extends Phaser.Scene {
     for (const placement of space.elements) this.drawElement(placement);
     this.rebuildGrid();
 
-    this.createAnimations();
+    this.ctx.onLoadProgress?.(1);
+    this.load.off(Phaser.Loader.Events.PROGRESS);
+    for (const key of this.textures.getTextureKeys()) {
+      if (key.startsWith(CHARACTER_PREFIX)) this.createCharacterAnimations(key);
+    }
     this.setUpCamera(map);
 
     if (this.ctx.mode === "play") {
@@ -129,6 +152,23 @@ export class WorldScene extends Phaser.Scene {
     this.player?.update();
     this.buildTool?.update();
     this.panWithKeys(delta);
+  }
+
+  /**
+   * Stops (or resumes) reading the keyboard, e.g. while a dialog is open over the game, so typing doesn't move
+   * the player and the browser gets the keys back.
+   */
+  setKeyboardEnabled(enabled: boolean) {
+    const keyboard = this.input.keyboard;
+    if (!keyboard) return;
+    keyboard.enabled = enabled;
+    if (enabled) {
+      keyboard.enableGlobalCapture();
+    } else {
+      keyboard.disableGlobalCapture();
+      // Otherwise a key held when the dialog opened stays "down"
+      keyboard.resetKeys();
+    }
   }
 
   /* ---------- Editing (called from React through the game controller) ---------- */
@@ -179,10 +219,18 @@ export class WorldScene extends Phaser.Scene {
     }
     if (!hit) return;
 
+    const placement = this.placed.get(hit)!.data;
     this.busy = true;
-    const removed = await this.ctx.onRemove(hit);
+    const removed = await this.ctx.onRemove(placement, () => void this.restoreElement(placement));
     this.busy = false;
     if (removed) this.removeElement(hit);
+  }
+
+  /** Undo for a removal: saves the piece again at its old spot (as a new placement) and draws it. */
+  private async restoreElement({ element, x, y }: SpaceElement) {
+    if (this.ctx.mode !== "edit") return;
+    const saved = await this.ctx.onPlace(element.id, x, y);
+    if (saved && this.sys.isActive()) void this.addElement(saved);
   }
 
   /* ---------- Furniture ---------- */
@@ -257,6 +305,7 @@ export class WorldScene extends Phaser.Scene {
             spawn.x,
             spawn.y,
             this.ctx.me.username,
+            this.loadedCharacterKey(this.ctx.me.avatar?.imageUrl ?? null),
             (x, y) => this.grid.isWalkable(x, y),
             (x, y) => network.sendMove(x, y)
           );
@@ -265,17 +314,25 @@ export class WorldScene extends Phaser.Scene {
         this.reportPresence();
       })
       .on("user-join", (user) => {
-        // A known user re-joining (e.g. from another tab) just moves to their new spot
+        // A known user re-joining (e.g. from another tab) just moves to their new spot, unless they changed
+        // avatar, in which case they're redrawn
         const existing = this.remotes.get(user.userId);
-        if (existing) existing.snapTo(user.x, user.y);
-        else this.addRemote(user);
+        if (existing && existing.textureKey === characterKey(user.avatarUrl ?? DEFAULT_CHARACTER_URL)) {
+          existing.snapTo(user.x, user.y);
+        } else {
+          this.removeRemote(user.userId);
+          this.addRemote(user);
+        }
         this.reportPresence();
       })
-      .on("movement", ({ userId, x, y }) => this.remotes.get(userId)?.moveTo(x, y))
+      .on("movement", ({ userId, x, y }) => {
+        const pending = this.pendingRemotes.get(userId);
+        if (pending) this.pendingRemotes.set(userId, { ...pending, x, y });
+        else this.remotes.get(userId)?.moveTo(x, y);
+      })
       .on("movement-rejected", ({ x, y }) => this.player?.snapTo(x, y))
       .on("user-left", ({ userId }) => {
-        this.remotes.get(userId)?.destroy();
-        this.remotes.delete(userId);
+        this.removeRemote(userId);
         this.reportPresence();
       })
       .on("element-added", (placement) => void this.addElement(placement))
@@ -284,18 +341,74 @@ export class WorldScene extends Phaser.Scene {
     network.connect();
   }
 
+  /** Draws another player once their character sheet has loaded (usually at once: it's cached). */
   private addRemote(user: RemoteUser) {
-    this.remotes.set(user.userId, new Avatar(this, user.x, user.y, user.username));
+    this.pendingRemotes.set(user.userId, user);
+    void this.ensureCharacter(user.avatarUrl).then((key) => {
+      // Their latest position. Skip if they left while the sheet loaded, or re-joined wearing another avatar
+      // (that join draws them instead).
+      const latest = this.pendingRemotes.get(user.userId);
+      if (!latest || latest.avatarUrl !== user.avatarUrl || !this.sys.isActive()) return;
+      this.pendingRemotes.delete(user.userId);
+      this.remotes.set(user.userId, new Avatar(this, latest.x, latest.y, latest.username, key));
+    });
+  }
+
+  private removeRemote(userId: string) {
+    this.pendingRemotes.delete(userId);
+    this.remotes.get(userId)?.destroy();
+    this.remotes.delete(userId);
   }
 
   private clearRemotes() {
     this.remotes.forEach((avatar) => avatar.destroy());
     this.remotes.clear();
+    this.pendingRemotes.clear();
   }
 
   private reportPresence() {
     if (this.ctx.mode !== "play") return;
-    this.ctx.onPresence(this.remotes.size + (this.player ? 1 : 0));
+    this.ctx.onPresence(this.remotes.size + this.pendingRemotes.size + (this.player ? 1 : 0));
+  }
+
+  /* ---------- Character sheets ---------- */
+
+  /** Texture key of a sheet that's already loaded, or the default character's. */
+  private loadedCharacterKey(url: string | null) {
+    const key = characterKey(url ?? DEFAULT_CHARACTER_URL);
+    return this.textures.exists(key) ? key : characterKey(DEFAULT_CHARACTER_URL);
+  }
+
+  /** Loads a character sheet and its animations if needed; resolves with the texture key to draw with. */
+  private ensureCharacter(url: string | null) {
+    if (!url) return Promise.resolve(characterKey(DEFAULT_CHARACTER_URL));
+    const key = characterKey(url);
+    if (this.textures.exists(key)) return Promise.resolve(key);
+
+    let load = this.characterLoads.get(key);
+    if (!load) {
+      load = new Promise<string>((resolve) => {
+        const done = () => {
+          this.load.off(`filecomplete-spritesheet-${key}`, done);
+          this.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, failed);
+          if (this.textures.exists(key)) {
+            this.createCharacterAnimations(key);
+            resolve(key);
+          } else {
+            resolve(characterKey(DEFAULT_CHARACTER_URL));
+          }
+        };
+        const failed = (file: Phaser.Loader.File) => {
+          if (file.key === key) done();
+        };
+        this.load.on(`filecomplete-spritesheet-${key}`, done);
+        this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, failed);
+        this.load.spritesheet(key, url, CHARACTER_FRAME);
+        this.load.start();
+      });
+      this.characterLoads.set(key, load);
+    }
+    return load;
   }
 
   private setUpCamera(map: Phaser.Tilemaps.Tilemap) {
@@ -346,24 +459,20 @@ export class WorldScene extends Phaser.Scene {
     cam.scrollY += (Number(held("down")) - Number(held("up"))) * step;
   }
 
-  private createAnimations() {
+  private createCharacterAnimations(key: string) {
     const anims = this.anims;
-    if (anims.exists("idle-down")) return;
-
-    // Sprite sheet layout of /assets/characters/adam.png: idle frames 0-3, walk cycles of 6 from frame 48
-    const idleFrames = { right: 0, up: 1, left: 2, down: 3 };
-    const walkStart = { right: 48, up: 54, left: 60, down: 66 };
+    if (anims.exists(animKey(key, "idle-down"))) return;
 
     for (const dir of ["right", "up", "left", "down"] as const) {
       anims.create({
-        key: `idle-${dir}`,
-        frames: [{ key: "adam", frame: idleFrames[dir] }],
+        key: animKey(key, `idle-${dir}`),
+        frames: [{ key, frame: IDLE_FRAMES[dir] }],
         frameRate: 1,
         repeat: -1,
       });
       anims.create({
-        key: `walk-${dir}`,
-        frames: anims.generateFrameNumbers("adam", { start: walkStart[dir], end: walkStart[dir] + 5 }),
+        key: animKey(key, `walk-${dir}`),
+        frames: anims.generateFrameNumbers(key, { start: WALK_START[dir], end: WALK_START[dir] + WALK_FRAMES - 1 }),
         frameRate: 10,
         // Loops while stepping tile to tile; Avatar switches back to idle when movement stops
         repeat: -1,
@@ -373,3 +482,5 @@ export class WorldScene extends Phaser.Scene {
 }
 
 const elementKey = (elementId: string) => `element:${elementId}`;
+const CHARACTER_PREFIX = "character:";
+const characterKey = (url: string) => `${CHARACTER_PREFIX}${url}`;

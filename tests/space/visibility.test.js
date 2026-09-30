@@ -77,11 +77,19 @@ describe("Space visibility, membership and invites", () => {
   test("An invite previews the space and accepting it grants access", async () => {
     const preview = await getInvite(guest.token, inviteCode);
     expect(preview.status).toBe(200);
-    expect(preview.data).toMatchObject({ spaceId: privateId, name: "Private HQ", ownerUsername: owner.username });
+    expect(preview.data).toMatchObject({
+      spaceId: privateId,
+      name: "Private HQ",
+      ownerUsername: owner.username,
+      visibility: "Private",
+      isOwner: false,
+      isMember: false,
+    });
 
     const accepted = await acceptInvite(guest.token, inviteCode);
     expect(accepted.status).toBe(200);
     expect(accepted.data.spaceId).toBe(privateId);
+    expect((await getInvite(guest.token, inviteCode)).data.isMember).toBe(true);
 
     expect((await getSpace(guest.token, privateId)).status).toBe(200);
     expect((await visitSpace(guest.token, privateId)).status).toBe(200);

@@ -4,77 +4,163 @@
  * Single source of truth for styling. Components use only these tokens and utilities:
  * no hex colours, arbitrary [..] values or inline styles in TSX.
  * Palette naming: `foreground` is the raised surface colour (cards, dialogs); text uses `copy`.
+ * The look follows Twitch's dark UI: near-black layered surfaces, purple used sparingly for actions.
  */
 @theme {
   /* Drop Tailwind's default palette so only the colours below exist */
   --color-*: initial;
 
-  --color-primary: #9147ff;
+  /* Brand purple: buttons, selection, links, the "you" marker in the game */
+  --color-primary: #9146ff;
   --color-primary-content: #ffffff;
-  --color-primary-dark: #7314ff;
-  --color-primary-light: #af7aff;
+  --color-primary-dark: #772ce8;
+  --color-primary-darker: #5c16c5;
+  --color-primary-light: #bf94ff;
 
-  --color-secondary: #ff4759;
-  --color-secondary-content: #470007;
-  --color-secondary-dark: #ff142b;
-  --color-secondary-light: #ff7a87;
+  /* Playful accent for highlights and decoration (never for actions) */
+  --color-secondary: #ff4da6;
+  --color-secondary-content: #3d0020;
+  --color-secondary-dark: #e62e8a;
+  --color-secondary-light: #ff85c2;
 
-  --color-background: #19191a;
-  --color-foreground: #262527;
-  --color-border: #3f3e41;
+  /* Surfaces, back to front: page, panels and cards, inputs and chips, hover */
+  --color-background: #0e0e10;
+  --color-foreground: #18181b;
+  --color-raised: #1f1f23;
+  --color-hover: #26262c;
+  --color-border: #2f2f35;
+  --color-border-strong: #45454f;
 
-  --color-copy: #fbfbfb;
-  --color-copy-light: #d9d8da;
-  --color-copy-lighter: #a5a4a8;
+  --color-copy: #efeff1;
+  --color-copy-light: #adadb8;
+  --color-copy-lighter: #7a7a85;
 
-  --color-success: #47ff47;
-  --color-warning: #ffff47;
-  --color-error: #ff4747;
+  --color-success: #00f593;
+  --color-warning: #ffb31a;
+  --color-error: #ff5a57;
+  --color-info: #1fa8f0;
+  /* Twitch's LIVE red, for "people are here right now" */
+  --color-live: #eb0400;
 
-  --color-success-content: #004700;
-  --color-warning-content: #474700;
+  --color-success-content: #00331f;
+  --color-warning-content: #3d2800;
   --color-error-content: #ffffff;
+  --color-info-content: #ffffff;
+  --color-live-content: #ffffff;
 }
 
-/* inline: next/font defines --font-geist-* on <body>, so resolve them where the utility is used, not on :root */
+/* inline: next/font defines its variables on <body>, so resolve them where the utility is used, not on :root */
 @theme inline {
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), monospace;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-inter), system-ui, sans-serif;
 }
 
 :root {
+  color-scheme: dark;
+
   /* Dialogs never grow past the viewport; their content scrolls instead */
   --dialog-max-height: 90vh;
   /* How much of the page shows through behind a dialog */
   --overlay-opacity: 80%;
   /* Strength of the subtle hover highlight on neutral surfaces */
   --hover-tint: 6%;
+  /* Floating panels over the game (dock, HUD chips) are slightly see-through */
+  --float-opacity: 88%;
+  --float-blur: 12px;
+  /* The one shadow: floating panels, menus and dialogs */
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 50%);
+  /* Soft brand glow behind hero art */
+  --glow-strength: 35%;
+
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
 
   /* Character sprite sheets (e.g. /assets/characters/adam.png) are 16x32 frames; frame 3 faces down */
   --sprite-frame-w: 16px;
   --sprite-frame-h: 32px;
   --sprite-idle-frame: 3;
+  /* Walk-down cycle used by animated previews: 6 frames in row 2 starting at column 18 (frame 66 of a
+     24-column sheet) */
+  --sprite-walk-row: 2;
+  --sprite-walk-first-col: 18;
+  --sprite-walk-frames: 6;
+  --sprite-walk-duration: 0.6s;
 
   /* Name labels drawn above characters in the game canvas (read by game/entities/Avatar.ts) */
-  --game-label-font-size: 11px;
-  --game-label-padding-x: 4px;
-  --game-label-padding-y: 1px;
+  --game-label-font-size: 9px;
+  --game-label-padding-x: 6px;
+  --game-label-padding-y: 2px;
+  --game-label-radius: 8px;
+  --game-label-opacity: 0.85;
+  /* How far below the top of the sprite frame the label sits (frames have empty space above the head), in
+     world pixels */
+  --game-label-offset-y: 10px;
+  /* Name text is rendered this many times sharper than the screen, so it stays crisp when the camera zooms in */
+  --game-label-supersample: 4;
+  /* Ellipse under the local player's feet */
+  --game-self-marker-opacity: 0.45;
 }
 
 @layer base {
   body {
     @apply bg-background font-sans text-copy;
   }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary-light;
+  }
+
+  ::selection {
+    @apply bg-primary text-primary-content;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ---------- Type ---------- */
+
+@utility heading-display {
+  @apply font-display font-bold tracking-tight;
+}
+
+/* Small uppercase label above a section */
+@utility eyebrow {
+  @apply text-xs font-semibold tracking-widest text-primary-light uppercase;
+}
+
+/* Keycap for keyboard hints */
+@utility kbd {
+  @apply inline-flex min-w-6 items-center justify-center rounded-md border border-border-strong border-b-2 bg-raised px-1.5 font-sans text-xs font-semibold text-copy-light;
 }
 
 /* ---------- Buttons ---------- */
 
 @utility btn {
-  @apply rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap transition select-none active:scale-96 disabled:pointer-events-none disabled:opacity-50;
+  transition-duration: var(--duration-fast);
 }
 
 @utility btn-primary {
-  @apply btn bg-primary text-primary-content hover:bg-primary-dark;
+  @apply btn bg-primary text-primary-content hover:bg-primary-dark active:bg-primary-darker;
+}
+
+/* Filled neutral button: the default secondary action */
+@utility btn-subtle {
+  @apply btn bg-raised text-copy hover:bg-hover;
 }
 
 @utility btn-ghost {
@@ -85,63 +171,221 @@
   @apply btn border border-error text-error hover:bg-error hover:text-error-content;
 }
 
+@utility btn-sm {
+  @apply px-3 py-1.5 text-xs;
+}
+
+@utility btn-lg {
+  @apply px-6 py-3 text-base;
+}
+
+/* Round icon-only button; give it an aria-label */
+@utility btn-icon {
+  @apply btn size-9 shrink-0 p-0 text-copy-light hover:bg-hover hover:text-copy;
+}
+
+/* Text link in running copy */
+@utility link {
+  @apply font-medium text-primary-light underline-offset-4 hover:underline;
+}
+
 /* ---------- Surfaces ---------- */
 
 @utility card {
   @apply rounded-2xl border border-border bg-foreground;
 }
 
+/* Panel floating over the game canvas: see-through, blurred, with the float shadow */
+@utility float-panel {
+  @apply rounded-2xl border border-border;
+  background-color: color-mix(in srgb, var(--color-foreground) var(--float-opacity), transparent);
+  backdrop-filter: blur(var(--float-blur));
+  box-shadow: var(--shadow-float);
+}
+
+/* Round icon button floating over the game (back, controls) */
+@utility hud-button {
+  @apply btn size-10 shrink-0 border border-border p-0 text-copy-light hover:text-copy;
+  background-color: color-mix(in srgb, var(--color-foreground) var(--float-opacity), transparent);
+  backdrop-filter: blur(var(--float-blur));
+  box-shadow: var(--shadow-float);
+  &[aria-pressed="true"] {
+    @apply border-primary text-primary-light;
+  }
+}
+
+/* Bottom-centre toolbar in a space */
+@utility dock {
+  @apply float-panel flex items-center gap-1 p-1.5;
+}
+
 /* Small floating label, e.g. the space name and connection status over the game */
 @utility chip {
-  @apply flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-medium;
+  @apply float-panel flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium;
 }
 
 /* Coloured status dot inside a chip; pick the colour with bg-success / bg-warning / bg-error */
 @utility status-dot {
-  @apply size-2 rounded-full;
+  @apply relative inline-flex size-2 shrink-0 rounded-full;
+}
+
+/* A status dot that pulses: wrap a status-dot and a status-dot-ping of the same colour in `relative` */
+@utility status-dot-ping {
+  @apply absolute inline-flex size-2 animate-ping rounded-full opacity-75;
+}
+
+/* Small label: visibility, counts */
+@utility badge {
+  @apply inline-flex shrink-0 items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-xs font-medium text-copy-light;
+}
+
+/* Twitch-style LIVE tag */
+@utility badge-live {
+  @apply inline-flex shrink-0 items-center gap-1 rounded-sm bg-live px-1.5 py-0.5 text-xs font-bold tracking-wide text-live-content uppercase;
+}
+
+/* Badge laid over an image (visibility on a space thumbnail) */
+@utility badge-overlay {
+  @apply badge text-copy;
+  background-color: color-mix(in srgb, var(--color-background) var(--float-opacity), transparent);
+  backdrop-filter: blur(var(--float-blur));
+}
+
+@utility badge-primary {
+  @apply badge bg-primary/15 text-primary-light;
 }
 
 /* Dropdown opened from a ⋯ button; its parent must be `relative` */
 @utility menu {
-  @apply card absolute top-full right-0 z-20 mt-1 flex min-w-44 flex-col overflow-hidden py-1;
+  @apply absolute top-full right-0 z-30 mt-2 flex min-w-48 flex-col overflow-hidden rounded-xl border border-border bg-raised p-1;
+  box-shadow: var(--shadow-float);
 }
 
 @utility menu-item {
-  @apply hover-tint px-3 py-2 text-left text-sm text-copy;
+  @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-copy outline-none hover:bg-hover focus-visible:bg-hover;
 }
 
 /* Tab button; the selected one is marked with aria-selected="true" */
 @utility tab {
-  @apply hover-tint rounded-lg px-3 py-1.5 text-sm font-medium text-copy-lighter;
-  &[aria-selected="true"] {
-    @apply bg-foreground text-copy;
+  @apply relative inline-flex items-center gap-2 px-1 pt-1 pb-3 text-sm font-semibold text-copy-lighter transition-colors hover:text-copy;
+  &::after {
+    @apply absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-transparent transition-colors;
+    content: "";
   }
+  &[aria-selected="true"] {
+    @apply text-copy;
+  }
+  &[aria-selected="true"]::after {
+    @apply bg-primary;
+  }
+}
+
+/* Count inside a tab */
+@utility tab-count {
+  @apply rounded-full bg-raised px-1.5 text-xs text-copy-light tabular-nums;
 }
 
 /* Selectable option tile (map picker, public/private choice); the chosen one has aria-pressed="true" */
 @utility option-tile {
-  @apply hover-tint rounded-xl border border-border text-left;
+  @apply rounded-xl border border-border bg-raised text-left transition-colors hover:border-border-strong;
   &[aria-pressed="true"] {
-    @apply border-primary ring-1 ring-primary;
+    @apply border-primary bg-primary/10 ring-1 ring-primary;
   }
 }
 
 @utility field {
-  @apply w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-copy outline-none placeholder:text-copy-lighter focus:border-primary;
+  @apply w-full rounded-lg border border-border bg-raised px-3 py-2 text-sm text-copy transition-colors outline-none placeholder:text-copy-lighter hover:border-border-strong focus:border-primary focus:ring-1 focus:ring-primary;
+  &:focus-visible {
+    outline: none;
+  }
+  &[type="file"] {
+    @apply cursor-pointer border-dashed py-3 file:mr-3 file:rounded-full file:border-0 file:bg-hover file:px-3 file:py-1 file:text-xs file:font-semibold file:text-copy;
+  }
 }
 
 @utility dialog-overlay {
   background-color: color-mix(in srgb, var(--color-background) var(--overlay-opacity), transparent);
+  backdrop-filter: blur(2px);
 }
 
-@utility dialog-panel {
-  @apply card w-full max-w-md overflow-y-auto p-6;
+/* Frame of a Modal: header and footer stay put while the body between them scrolls. Set the width with max-w-*. */
+@utility dialog-frame {
+  @apply flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-foreground;
   max-height: var(--dialog-max-height);
+  box-shadow: var(--shadow-float);
+}
+
+/* A simple dialog box with no separate header or footer */
+@utility dialog-panel {
+  @apply w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-foreground p-6;
+  max-height: var(--dialog-max-height);
+  box-shadow: var(--shadow-float);
 }
 
 @utility hover-tint {
   &:hover {
     background-color: color-mix(in srgb, var(--color-copy) var(--hover-tint), transparent);
+  }
+}
+
+/* Colours the icon of a success / error toast (components/Toaster.tsx) */
+@utility toast-success {
+  & [data-icon] {
+    @apply text-success;
+  }
+}
+
+@utility toast-error {
+  & [data-icon] {
+    @apply text-error;
+  }
+}
+
+@utility skeleton {
+  @apply animate-pulse rounded-lg bg-raised;
+}
+
+/* Twitch's card hover: the thumbnail slides up and right, revealing a purple block behind it.
+   Put `group` on the card, thumb-lift on the wrapper and thumb-lift-inner on the image box. */
+@utility thumb-lift {
+  @apply relative rounded-xl bg-primary;
+}
+
+@utility thumb-lift-inner {
+  @apply relative overflow-hidden rounded-xl bg-raised transition-transform group-hover:translate-x-1.5 group-hover:-translate-y-1.5 group-focus-within:translate-x-1.5 group-focus-within:-translate-y-1.5;
+  transition-duration: var(--duration-fast);
+}
+
+/* Placeholder art when a space has no thumbnail */
+@utility thumb-fallback {
+  background-image:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--color-primary) 45%, transparent), transparent 60%),
+    radial-gradient(circle at 75% 70%, color-mix(in srgb, var(--color-secondary) 30%, transparent), transparent 55%);
+  background-color: var(--color-raised);
+}
+
+/* Soft purple glow behind hero artwork */
+@utility brand-glow {
+  box-shadow: 0 0 80px color-mix(in srgb, var(--color-primary) var(--glow-strength), transparent);
+}
+
+/* Faint dotted grid behind marketing sections */
+@utility bg-dots {
+  background-image: radial-gradient(color-mix(in srgb, var(--color-copy) 8%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Thin horizontal progress bar; set the value with a <progress> element */
+@utility progress-bar {
+  @apply h-1.5 w-full appearance-none overflow-hidden rounded-full bg-raised;
+  &::-webkit-progress-bar {
+    @apply bg-raised;
+  }
+  &::-webkit-progress-value {
+    @apply rounded-full bg-primary transition-all;
+  }
+  &::-moz-progress-bar {
+    @apply rounded-full bg-primary;
   }
 }
 
@@ -162,6 +406,10 @@
   --sprite-scale: 1;
 }
 
+@utility avatar-sprite-lg {
+  --sprite-scale: 3;
+}
+
 /* Expects --sprite-url (the only per-avatar value) to be set on the element */
 @utility avatar-sprite-frame {
   @apply pixelated;
@@ -172,4 +420,27 @@
   background-position: calc(var(--sprite-idle-frame) * var(--sprite-frame-w) * -1) 0;
   transform: scale(var(--sprite-scale));
   transform-origin: top left;
+}
+
+/* Plays the walk-down cycle instead of standing still (avatar picker, landing art) */
+@utility avatar-sprite-walking {
+  animation: sprite-walk var(--sprite-walk-duration) steps(var(--sprite-walk-frames)) infinite;
+}
+
+/* Circle behind a small avatar, like a profile picture */
+@utility avatar-badge {
+  @apply flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-raised ring-2 ring-primary/40;
+}
+
+@keyframes sprite-walk {
+  from {
+    background-position:
+      calc(var(--sprite-walk-first-col) * var(--sprite-frame-w) * -1)
+      calc(var(--sprite-walk-row) * var(--sprite-frame-h) * -1);
+  }
+  to {
+    background-position:
+      calc((var(--sprite-walk-first-col) + var(--sprite-walk-frames)) * var(--sprite-frame-w) * -1)
+      calc(var(--sprite-walk-row) * var(--sprite-frame-h) * -1);
+  }
 }

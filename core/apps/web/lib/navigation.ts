@@ -8,3 +8,8 @@ export function safeNextPath(next: string | null) {
 export function inviteUrl(code: string) {
   return `${window.location.origin}/invite/${code}`;
 }
+
+// Absolute link to a space itself (only useful to others when it's public)
+export function spaceUrl(spaceId: string) {
+  return `${window.location.origin}/space/${spaceId}`;
+}

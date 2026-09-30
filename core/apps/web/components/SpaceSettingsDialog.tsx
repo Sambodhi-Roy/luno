@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { api } from "@/lib/api";
+import { RotateCcw } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+import { toast } from "sonner";
+import { api, friendlyError } from "@/lib/api";
 import { inviteUrl } from "@/lib/navigation";
 import type { OwnedSpaceSummary, Visibility } from "@/lib/types";
-import { Button, ErrorText, Input, Label, Modal } from "./ui";
+import { useConfirm } from "./ConfirmDialog";
+import { CopyField } from "./CopyField";
+import { Button, ErrorText, Hint, Input, Label, Modal } from "./ui";
 import { VisibilityPicker } from "./VisibilityPicker";
 
 type SpaceChanges = Partial<Pick<OwnedSpaceSummary, "name" | "visibility" | "inviteCode">>;
@@ -19,13 +23,12 @@ export function SpaceSettingsDialog({
   onClose: () => void;
   onChanged: (changes: SpaceChanges) => void;
 }) {
+  const formId = useId();
   const [name, setName] = useState(space.name);
   const [visibility, setVisibility] = useState<Visibility>(space.visibility);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const link = inviteUrl(space.inviteCode);
+  const { confirm, dialog } = useConfirm();
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,34 +37,48 @@ export function SpaceSettingsDialog({
     try {
       await api(`/space/${space.id}`, { method: "PATCH", body: { name, visibility } });
       onChanged({ name, visibility });
+      toast.success("Settings saved");
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save");
+      setError(friendlyError(e, "Could not save your changes"));
       setSaving(false);
     }
   }
 
-  async function copyLink() {
-    await navigator.clipboard.writeText(link);
-    setCopied(true);
+  function resetLink() {
+    void confirm({
+      title: "Reset the invite link?",
+      body: "The current link stops working straight away. People who already joined keep their access.",
+      confirmLabel: "Reset link",
+      danger: true,
+      onConfirm: async () => {
+        const res = await api<{ inviteCode: string }>(`/space/${space.id}/invite/reset`, { method: "POST" });
+        onChanged({ inviteCode: res.inviteCode });
+        toast.success("New invite link created");
+      },
+    });
   }
 
-  async function resetLink() {
-    if (!confirm("Reset the invite link? The current link stops working. People who already joined keep access.")) {
-      return;
-    }
-    try {
-      const res = await api<{ inviteCode: string }>(`/space/${space.id}/invite/reset`, { method: "POST" });
-      onChanged({ inviteCode: res.inviteCode });
-      setCopied(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reset the link");
-    }
-  }
+  if (dialog) return dialog;
 
   return (
-    <Modal title="Space settings" onClose={onClose}>
-      <form onSubmit={onSubmit} className="space-y-4">
+    <Modal
+      title="Space settings"
+      description={space.name}
+      onClose={onClose}
+      busy={saving}
+      footer={
+        <>
+          <Button type="button" variant="subtle" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} busy={saving}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={onSubmit} className="space-y-5">
         <label className="block">
           <Label>Name</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} minLength={3} maxLength={30} required />
@@ -69,29 +86,19 @@ export function SpaceSettingsDialog({
 
         <VisibilityPicker value={visibility} onChange={setVisibility} />
 
-        <div>
+        <div className="border-t border-border pt-5">
           <Label>Invite link</Label>
-          <div className="flex gap-2">
-            <Input value={link} readOnly onFocus={(e) => e.target.select()} />
-            <Button type="button" variant="ghost" onClick={copyLink} className="shrink-0">
-              {copied ? "Copied" : "Copy"}
+          <CopyField value={inviteUrl(space.inviteCode)} />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <Hint>Anyone with this link can join, even when the space is private.</Hint>
+            <Button type="button" variant="ghost" onClick={resetLink} className="btn-sm shrink-0">
+              <RotateCcw className="size-3.5" />
+              Reset
             </Button>
           </div>
-          <button type="button" onClick={resetLink} className="mt-1 text-xs text-copy-lighter hover:text-copy">
-            Reset link
-          </button>
         </div>
 
         <ErrorText>{error}</ErrorText>
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

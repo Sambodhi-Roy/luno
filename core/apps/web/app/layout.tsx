@@ -1,20 +1,26 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
+import { Toaster } from "@/components/Toaster";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// UI text
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Headings and the wordmark
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Luno",
-  description: "A 2D virtual space to hang out and work together",
+  title: {
+    default: "Luno: your team's place to hang out",
+    template: "%s · Luno",
+  },
+  description: "A 2D virtual space where your team walks around, bumps into each other and hangs out together.",
 };
 
 export default function RootLayout({
@@ -24,10 +30,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${inter.variable} ${spaceGrotesk.variable} antialiased`}>
         {children}
+        <Toaster />
       </body>
     </html>
   );

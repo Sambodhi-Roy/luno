@@ -15,11 +15,12 @@ export class LocalPlayer extends Avatar {
     tileX: number,
     tileY: number,
     name: string,
+    textureKey: string,
     // Asked on every step, so furniture placed or removed later is respected
     private readonly canEnter: (tileX: number, tileY: number) => boolean,
     private readonly onStep: (tileX: number, tileY: number) => void
   ) {
-    super(scene, tileX, tileY, name);
+    super(scene, tileX, tileY, name, textureKey, true);
 
     const { KeyCodes } = Phaser.Input.Keyboard;
     this.keys = scene.input.keyboard!.addKeys({

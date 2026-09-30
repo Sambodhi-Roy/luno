@@ -5,20 +5,30 @@ import { bodyFont, cssVar, themeColor } from "@/lib/theme";
 export const TILE = 32;
 export type Direction = "up" | "down" | "left" | "right";
 
-const SPRITE_KEY = "adam";
 // Sprite frames are 16x32; drawn at 2x so the character is one tile wide and two tall
 const SPRITE_SCALE = 2;
 const SPRITE_HEIGHT = 32 * SPRITE_SCALE;
 // Names always render above characters and furniture, whose depth is their y position
 const LABEL_DEPTH = 1_000_000;
+// The "you" marker under the local player's feet
+const SELF_MARKER_WIDTH = 26;
+const SELF_MARKER_HEIGHT = 10;
+
+/** Animation key for one of a character sheet's animations, e.g. "character:/a.png:walk-down". */
+export const animKey = (textureKey: string, name: string) => `${textureKey}:${name}`;
+
+const color = (name: string) => Phaser.Display.Color.HexStringToColor(themeColor(name)).color;
 
 /**
  * A character standing on the tile grid: sprite, walk animations and a name label.
- * Used as-is for other players; LocalPlayer adds keyboard control.
+ * Used as-is for other players; LocalPlayer adds keyboard control and the "you" marker.
  */
 export class Avatar {
   readonly sprite: Phaser.GameObjects.Sprite;
-  private readonly label: Phaser.GameObjects.Text;
+  private readonly label: Phaser.GameObjects.Container;
+  private readonly marker: Phaser.GameObjects.Ellipse | null;
+  // Label position relative to the sprite, read once since it's used on every animation frame
+  private readonly labelOffset = parseFloat(cssVar("--game-label-offset-y"));
   private tween: Phaser.Tweens.Tween | null = null;
   protected direction: Direction = "down";
   tileX: number;
@@ -28,29 +38,22 @@ export class Avatar {
     protected readonly scene: Phaser.Scene,
     tileX: number,
     tileY: number,
-    name: string
+    name: string,
+    // Character sheet texture, loaded by WorldScene along with its animations
+    readonly textureKey: string,
+    isSelf = false
   ) {
     this.tileX = tileX;
     this.tileY = tileY;
 
-    this.sprite = scene.add.sprite(0, 0, SPRITE_KEY).setOrigin(0.5, 1).setScale(SPRITE_SCALE);
-    this.label = scene.add
-      .text(0, 0, name, {
-        fontFamily: bodyFont(),
-        fontSize: cssVar("--game-label-font-size"),
-        color: themeColor("copy"),
-        backgroundColor: themeColor("foreground"),
-        padding: {
-          x: parseFloat(cssVar("--game-label-padding-x")),
-          y: parseFloat(cssVar("--game-label-padding-y")),
-        },
-        resolution: window.devicePixelRatio,
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(LABEL_DEPTH);
+    this.marker = isSelf
+      ? scene.add.ellipse(0, 0, SELF_MARKER_WIDTH, SELF_MARKER_HEIGHT, color("primary"), parseFloat(cssVar("--game-self-marker-opacity")))
+      : null;
+    this.sprite = scene.add.sprite(0, 0, textureKey).setOrigin(0.5, 1).setScale(SPRITE_SCALE);
+    this.label = this.createLabel(name, isSelf);
 
     this.placeAt();
-    this.sprite.play(`idle-${this.direction}`);
+    this.sprite.play(animKey(this.textureKey, `idle-${this.direction}`));
   }
 
   get moving() {
@@ -63,7 +66,7 @@ export class Avatar {
     this.face(tileX - this.tileX, tileY - this.tileY);
     this.tileX = tileX;
     this.tileY = tileY;
-    this.sprite.play(`walk-${this.direction}`, true);
+    this.sprite.play(animKey(this.textureKey, `walk-${this.direction}`), true);
 
     const { x, y } = this.worldPosition();
     this.tween = this.scene.tweens.add({
@@ -71,7 +74,7 @@ export class Avatar {
       x,
       y,
       duration: STEP_MS,
-      onUpdate: () => this.syncLabel(),
+      onUpdate: () => this.syncAttachments(),
       onComplete: () => {
         this.tween = null;
         if (onComplete) onComplete();
@@ -101,6 +104,7 @@ export class Avatar {
     this.tween?.remove();
     this.sprite.destroy();
     this.label.destroy();
+    this.marker?.destroy();
   }
 
   protected face(dx: number, dy: number) {
@@ -111,7 +115,31 @@ export class Avatar {
   }
 
   protected idle() {
-    this.sprite.play(`idle-${this.direction}`, true);
+    this.sprite.play(animKey(this.textureKey, `idle-${this.direction}`), true);
+  }
+
+  /** Name in a rounded pill; the local player's is purple so you can find yourself at a glance. */
+  private createLabel(name: string, isSelf: boolean) {
+    const padX = parseFloat(cssVar("--game-label-padding-x"));
+    const padY = parseFloat(cssVar("--game-label-padding-y"));
+    const text = this.scene.add
+      .text(0, 0, name, {
+        fontFamily: bodyFont(),
+        fontSize: cssVar("--game-label-font-size"),
+        fontStyle: "600",
+        color: themeColor(isSelf ? "primary-content" : "copy"),
+        resolution: window.devicePixelRatio * parseFloat(cssVar("--game-label-supersample")),
+      })
+      .setOrigin(0.5, 1);
+
+    const width = text.width + padX * 2;
+    const height = text.height + padY * 2;
+    const pill = this.scene.add.graphics();
+    pill.fillStyle(color(isSelf ? "primary" : "background"), isSelf ? 1 : parseFloat(cssVar("--game-label-opacity")));
+    pill.fillRoundedRect(-width / 2, -height, width, height, Math.min(parseFloat(cssVar("--game-label-radius")), height / 2));
+    text.setY(-padY);
+
+    return this.scene.add.container(0, 0, [pill, text]).setDepth(LABEL_DEPTH);
   }
 
   private finishStep() {
@@ -129,12 +157,15 @@ export class Avatar {
   private placeAt() {
     const { x, y } = this.worldPosition();
     this.sprite.setPosition(x, y);
-    this.syncLabel();
+    this.syncAttachments();
   }
 
-  private syncLabel() {
+  private syncAttachments() {
+    const { x, y } = this.sprite;
     // Draw in front of anything whose bottom edge is above the character's feet
-    this.sprite.setDepth(this.sprite.y);
-    this.label.setPosition(this.sprite.x, this.sprite.y - SPRITE_HEIGHT);
+    this.sprite.setDepth(y);
+    this.label.setPosition(x, y - SPRITE_HEIGHT + this.labelOffset);
+    // Just under the feet, and just behind the character
+    this.marker?.setPosition(x, y - SELF_MARKER_HEIGHT / 2).setDepth(y - 1);
   }
 }

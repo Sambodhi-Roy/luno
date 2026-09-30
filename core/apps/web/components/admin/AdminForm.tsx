@@ -1,59 +1,111 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
-import { Button } from "../ui";
-
-type Result = { ok: boolean; text: string } | null;
+import { ImagePlus, type LucideIcon } from "lucide-react";
+import { useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { toast } from "sonner";
+import { friendlyError } from "@/lib/api";
+import { Button, ErrorText } from "../ui";
 
 /**
- * Card with a title and a form that shows a busy state and a success/error line.
- * `onSubmit` returns the success message, or throws with the error to show.
+ * Card with a title and a form with a busy state. `onSubmit` returns the success message (shown as a toast),
+ * or throws with the error to show under the form.
  */
 export function AdminForm({
+  id,
+  icon: Icon,
   title,
   description,
   submitLabel,
   onSubmit,
   children,
+  aside,
 }: {
+  id: string;
+  icon: LucideIcon;
   title: string;
-  description: string;
+  description: ReactNode;
   submitLabel: string;
   onSubmit: (form: HTMLFormElement) => Promise<string>;
   children: ReactNode;
+  // Shown under the form, e.g. what already exists
+  aside?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Result>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Bumped after a successful submit so file previews clear along with the form
+  const [resetKey, setResetKey] = useState(0);
 
   async function handle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     setBusy(true);
-    setResult(null);
+    setError(null);
     try {
-      setResult({ ok: true, text: await onSubmit(form) });
+      toast.success(await onSubmit(form));
       form.reset();
+      setResetKey((k) => k + 1);
     } catch (err) {
-      setResult({ ok: false, text: err instanceof Error ? err.message : "Something went wrong" });
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form onSubmit={handle} className="card flex flex-col gap-4 p-6">
-      <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="text-sm text-copy-lighter">{description}</p>
+    <section id={id} className="card scroll-mt-24 p-6">
+      <div className="mb-5 flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary-light">
+          <Icon className="size-5" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="text-sm text-copy-lighter">{description}</p>
+        </div>
       </div>
-      {children}
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={busy}>
-          {busy ? "Uploading…" : submitLabel}
-        </Button>
-        {result && <p className={`text-sm ${result.ok ? "text-success" : "text-error"}`}>{result.text}</p>}
+      <form key={resetKey} onSubmit={handle} className="flex flex-col gap-4">
+        {children}
+        <ErrorText>{error}</ErrorText>
+        <div>
+          <Button type="submit" busy={busy}>
+            {busy ? "Uploading…" : submitLabel}
+          </Button>
+        </div>
+      </form>
+      {aside && <div className="mt-6 border-t border-border pt-5">{aside}</div>}
+    </section>
+  );
+}
+
+/** PNG file input that previews the chosen image next to it. */
+export function ImageInput(props: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "onChange">) {
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!preview) return;
+    return () => URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-raised text-copy-lighter">
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element -- local preview of the chosen file
+          <img src={preview} alt="" className="pixelated h-full w-full object-contain" />
+        ) : (
+          <ImagePlus className="size-5" />
+        )}
       </div>
-    </form>
+      <input
+        {...props}
+        type="file"
+        accept="image/png"
+        className="field"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          setPreview(file ? URL.createObjectURL(file) : null);
+        }}
+      />
+    </div>
   );
 }
 
