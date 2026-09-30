@@ -189,7 +189,7 @@ export const leaveSpace = async (req: Request, res: Response) => {
   }
 };
 
-const findInvite = (code: string) =>
+const findInvite = (code: string, userId: string) =>
   client.space.findUnique({
     where: { inviteCode: code },
     select: {
@@ -198,8 +198,11 @@ const findInvite = (code: string) =>
       width: true,
       height: true,
       thumbnail: true,
+      visibility: true,
       creatorId: true,
       creator: { select: { username: true } },
+      // The caller's own membership, if any, so the invite page can say "Enter" instead of "Join"
+      members: { where: { userId }, select: { userId: true } },
     },
   });
 
@@ -221,7 +224,7 @@ export const getInvite = async (req: Request, res: Response) => {
   }
 
   try {
-    const space = await findInvite(code);
+    const space = await findInvite(code, userId);
 
     if (!space) {
       return res.status(404).json({
@@ -235,7 +238,9 @@ export const getInvite = async (req: Request, res: Response) => {
       dimensions: `${space.width}x${space.height}`,
       thumbnail: space.thumbnail,
       ownerUsername: space.creator.username,
+      visibility: space.visibility,
       isOwner: space.creatorId === userId,
+      isMember: space.members.length > 0,
     });
   } catch (e) {
     console.error(e);

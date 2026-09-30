@@ -50,7 +50,10 @@ export type InvitePreview = {
   dimensions: string;
   thumbnail: string | null;
   ownerUsername: string;
+  visibility: Visibility;
   isOwner: boolean;
+  // Already joined (through an invite or a public visit)
+  isMember: boolean;
 };
 
 export type Element = {
