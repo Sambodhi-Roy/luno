@@ -15,7 +15,8 @@
     "clean": "rimraf dist",
     "postinstall": "prisma generate",
     "promote-admin": "tsx scripts/set-role.ts Admin",
-    "demote-admin": "tsx scripts/set-role.ts User"
+    "demote-admin": "tsx scripts/set-role.ts User",
+    "cleanup-test-data": "tsx scripts/cleanup-test-data.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
