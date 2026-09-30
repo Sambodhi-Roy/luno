@@ -1,5 +1,5 @@
 import client from "@repo/db/client";
-import type { InternalEvent, PlacedElement } from "@repo/protocol";
+import type { CustomMap, InternalEvent, PlacedElement } from "@repo/protocol";
 import { loadTiledMap } from "./assets.js";
 import { Room } from "./Room.js";
 
@@ -7,6 +7,7 @@ type SpaceRow = {
   width: number;
   height: number;
   tmjUrl: string | null;
+  customMap: CustomMap | null;
   elements: (PlacedElement & { id: string })[];
 };
 
@@ -39,7 +40,7 @@ export class RoomManager {
   }
 
   /**
-   * Applies a furniture change reported by apps/http. Spaces nobody is in are skipped: the next join loads
+   * Applies a furniture or custom map change reported by apps/http. Spaces nobody is in are skipped: the next join loads
    * fresh data from the database. A load already in flight may or may not include the change, so wait for it
    * and apply anyway (adds are idempotent by id).
    */
@@ -48,14 +49,15 @@ export class RoomManager {
     if (!room) return;
 
     if (event.type === "element-added") room.addElement(event.payload);
-    else room.removeElement(event.payload.id);
+    else if (event.type === "element-removed") room.removeElement(event.payload.id);
+    else room.setCustomMap(event.payload);
   }
 
   private async load(spaceId: string): Promise<Room | null> {
     // One SQL round trip. The equivalent nested Prisma query issues one query per relation,
     // which made joining take seconds against a remote database.
     const rows = await client.$queryRaw<SpaceRow[]>`
-      SELECT s.width, s.height, m."tmjUrl",
+      SELECT s.width, s.height, m."tmjUrl", s."customMap",
         COALESCE(
           json_agg(json_build_object('id', se.id, 'x', se.x, 'y', se.y, 'width', e.width, 'height', e.height, 'static', e.static))
             FILTER (WHERE se.id IS NOT NULL),
@@ -72,7 +74,7 @@ export class RoomManager {
     if (!space) return null;
 
     const tiledMap = space.tmjUrl ? await loadTiledMap(space.tmjUrl) : null;
-    const room = new Room(spaceId, space.width, space.height, tiledMap, space.elements);
+    const room = new Room(spaceId, space.width, space.height, tiledMap, space.elements, space.customMap);
     this.rooms.set(spaceId, room);
     return room;
   }

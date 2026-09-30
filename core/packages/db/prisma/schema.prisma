@@ -30,6 +30,9 @@ model Space {
   width     Int
   height    Int
   thumbnail String?
+  // Floors and walls of a map built in the editor ({ floor: number[], walls: number[] }); null for spaces made
+  // from an uploaded map or with dimensions only
+  customMap Json?
   creatorId String
   mapId     String?
   // Public spaces are listed in Explore and open to any signed-in user; private ones need an invite

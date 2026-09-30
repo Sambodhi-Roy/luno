@@ -1,6 +1,7 @@
 import {
   buildCollisionGrid,
   type CollisionGrid,
+  type CustomMap,
   type PlacedElement,
   type Position,
   type RemoteUser,
@@ -23,7 +24,9 @@ export class Room {
     private readonly width: number,
     private readonly height: number,
     private readonly tiledMap: TiledMap | null,
-    elements: (PlacedElement & { id: string })[]
+    elements: (PlacedElement & { id: string })[],
+    // Floors and walls of a map built in the editor, instead of a Tiled map
+    private customMap: CustomMap | null = null
   ) {
     this.elements = new Map(elements.map(({ id, ...placed }) => [id, placed]));
     this._grid = this.buildGrid();
@@ -47,8 +50,15 @@ export class Room {
     this.broadcast({ type: "element-removed", payload: { id } });
   }
 
+  /** The owner changed the custom map's floors or walls in the editor: re-check walkability and tell everyone. */
+  setCustomMap(map: CustomMap) {
+    this.customMap = map;
+    this._grid = this.buildGrid();
+    this.broadcast({ type: "map-updated", payload: map });
+  }
+
   private buildGrid() {
-    return buildCollisionGrid(this.width, this.height, this.tiledMap, [...this.elements.values()]);
+    return buildCollisionGrid(this.width, this.height, this.tiledMap, [...this.elements.values()], this.customMap);
   }
 
   get isEmpty() {

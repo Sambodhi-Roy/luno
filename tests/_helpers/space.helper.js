@@ -59,6 +59,21 @@ function addElement(token, spaceId, elementId, x, y) {
   return client.post("/space/element", { spaceId, elementId, x, y }, auth(token));
 }
 
+// A space with a map built in the editor; size is "small", "medium" or "large"
+function createCustomSpace(token, name, size, visibility) {
+  return client.post("/space", { name, layout: "custom", size, visibility }, auth(token));
+}
+
+function saveCustomMap(token, spaceId, map) {
+  return client.put(`/space/${spaceId}/custom-map`, map, auth(token));
+}
+
+function uploadSpaceThumbnail(token, spaceId, data, name = "cover.png") {
+  const form = new FormData();
+  form.append("file", new Blob([data]), name);
+  return client.put(`/space/${spaceId}/thumbnail`, form, auth(token));
+}
+
 function removeElement(token, id) {
   // axios sends DELETE bodies via the `data` config key
   return client.delete("/space/element", { ...auth(token), data: { id } });
@@ -80,4 +95,7 @@ module.exports = {
   getAllElements,
   addElement,
   removeElement,
+  createCustomSpace,
+  saveCustomMap,
+  uploadSpaceThumbnail,
 };

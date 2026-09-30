@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CustomMapSize } from "@repo/protocol";
 
 export const SignupSchema = z.object({
   username: z.string().trim().min(1, "Username is required"),
@@ -24,10 +25,13 @@ export const createSpaceSchema = z
     // "<width>x<height>" in tiles; defaults to the map's size when mapId is given
     dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/).optional(),
     mapId: z.string().optional(),
+    // "custom": an editable map built in the editor, at one of the preset sizes (default medium)
+    layout: z.literal("custom").optional(),
+    size: z.enum(["small", "medium", "large"] as const satisfies readonly CustomMapSize[]).optional(),
     visibility: visibilitySchema.default("Private"),
   })
-  .refine((data) => data.dimensions || data.mapId, {
-    message: "Either dimensions or mapId is required",
+  .refine((data) => data.dimensions || data.mapId || data.layout === "custom", {
+    message: "One of dimensions, mapId or layout: custom is required",
   });
 
 export const updateSpaceSchema = z

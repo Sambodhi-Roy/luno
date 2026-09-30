@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
 import { randomUUID } from "node:crypto";
+import { CUSTOM_MAP_SIZES, newCustomMap } from "@repo/protocol";
 import { createSpaceSchema, addElementSchema, deleteElementSchema, updateSpaceSchema } from "../types/index.js";
 import { notifySpace } from "../lib/realtime.js";
 import { canAccess } from "../lib/spaceAccess.js";
@@ -22,7 +23,8 @@ export const createSpace = async (req: Request, res: Response) => {
     });
   }
 
-  const { name, dimensions, mapId, visibility } = parsedData.data;
+  const { name, dimensions, mapId, layout, size, visibility } = parsedData.data;
+  const custom = layout === "custom";
 
   const creatorId = req.user?.id;
 
@@ -33,23 +35,26 @@ export const createSpace = async (req: Request, res: Response) => {
   }
 
   try {
-    const map = mapId
+    // A custom map is built in the editor, so it never starts from an uploaded map
+    const map = mapId && !custom
       ? await client.map.findUnique({
           where: { id: mapId },
           include: { mapElements: true },
         })
       : null;
 
-    if (mapId && !map) {
+    if (mapId && !custom && !map) {
       return res.status(400).json({
         message: "Invalid mapId",
       });
     }
 
-    // Explicit dimensions win; otherwise the space takes the map's size
-    const { width, height } = dimensions
-      ? parseDimensions(dimensions)
-      : { width: map!.width, height: map!.height };
+    // Custom maps come in preset sizes; otherwise explicit dimensions win, then the map's size
+    const { width, height } = custom
+      ? CUSTOM_MAP_SIZES[size ?? "medium"]
+      : dimensions
+        ? parseDimensions(dimensions)
+        : { width: map!.width, height: map!.height };
 
     const space = await client.$transaction(async (tx) => {
       const createdSpace = await tx.space.create({
@@ -60,6 +65,8 @@ export const createSpace = async (req: Request, res: Response) => {
           creatorId,
           visibility,
           ...(map && { mapId: map.id, thumbnail: map.thumbnail }),
+          // A walled room of plain floor to start building from
+          ...(custom && { customMap: newCustomMap(width, height) }),
         },
       });
 
@@ -199,6 +206,7 @@ export const getSpace = async (req: Request, res: Response) => {
       dimensions: `${space.width}x${space.height}`,
       mapId: space.mapId ?? null,
       tmjUrl: space.map?.tmjUrl ?? null,
+      customMap: space.customMap ?? null,
       creatorId: space.creatorId,
       visibility: space.visibility,
       // The invite link is the key to a private space, so only its owner sees it
