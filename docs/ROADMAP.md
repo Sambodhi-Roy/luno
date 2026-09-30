@@ -88,11 +88,20 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 
 **Known limitation:** switching a space to Private doesn't remove people who are already inside. It only affects new joins.
 
+### Between Phases 3 and 4: UI polish
+A pass to make the app feel like a finished product before the social layer. The look follows Twitch (near-black layered surfaces, `#9146FF` for actions, pill buttons, the card hover that reveals a purple block), and the in-space layout follows Gather and ZEP.
+- [x] Design system in `globals.css`: Twitch palette, Inter and Space Grotesk, and utilities for buttons, badges, a floating dock, key caps and skeletons. `lucide-react` icons, `sonner` toasts, and a moon logo and favicon.
+- [x] Shared primitives: accessible `Modal` (Escape, focus trap, fixed header and footer), `useConfirm` in place of `confirm()`, `EmptyState`, `FullPageState`, `Popover`, `friendlyError` for user-facing API errors, and a `useMe` status so an unreachable API shows a retry screen instead of loading forever
+- [x] Pages: a marketing landing page, split-layout auth with a banner for invite links, a dashboard with a header and account menu, tabs in the URL with counts, skeletons and empty states with actions, redesigned space cards, an invite page that knows existing members (`isMember` on `GET /space/invite/:code`), admin sections with previews, a branded 404 and error pages, and per-route titles
+- [x] Space HUD: a loading screen with progress until you've joined, a space title with live status, a share popover, a dock with your avatar, a first-visit controls card, and a dialog for disconnects that won't retry (another tab, lost access, space deleted) with Rejoin
+- [x] In game: each player's chosen avatar (sheets load on demand and fall back to the default character), rounded name tags, and a purple tag and floor marker for yourself
+- [x] Editor: floating top bar with a saving indicator, a collapsible furniture panel (bottom sheet on phones) with retry, toasts for errors, and Undo after removing furniture
+
 ### Phase 4: Social layer
 - [ ] Text chat, both space-wide and proximity
 - [ ] Online-users sidebar, emotes and reactions, follow a user
 - [x] Invite links, with an optional private-space flag (done early, see above)
-- [ ] Avatar sprite sheets per `Avatar`, replacing the hardcoded "adam"
+- [x] Avatar sprite sheets per `Avatar`, replacing the hardcoded "adam" (done in the UI polish pass; every sheet must share adam's layout)
 
 ### Phase 5: Proximity audio/video (LiveKit)
 - [ ] `POST /space/:id/av-token` issues a LiveKit token (room = spaceId, identity = userId)
