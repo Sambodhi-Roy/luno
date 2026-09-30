@@ -1,9 +1,11 @@
 import * as Phaser from "phaser";
-import { buildCollisionGrid, type CollisionGrid, type TiledMap } from "@repo/protocol/rules";
+import { buildCollisionGrid, type CollisionGrid, type CustomMap, type TiledMap } from "@repo/protocol/rules";
 import type { RemoteUser, SpaceElement } from "@repo/protocol";
 import { DEFAULT_AVATAR_URL } from "@/lib/avatars";
-import { themeColor } from "@/lib/theme";
+import { cssVar, themeColor } from "@/lib/theme";
 import type { Element, Me, SpaceDetail } from "@/lib/types";
+import type { PaintTool } from "@/lib/builder";
+import { CustomMapView, loadBuilder } from "../customMap";
 import { animKey, Avatar, TILE } from "../entities/Avatar";
 import { LocalPlayer } from "../entities/LocalPlayer";
 import { NetworkManager, type ConnectionStatus } from "../network/NetworkManager";
@@ -20,9 +22,15 @@ const CHARACTER_FRAME = { frameWidth: 32, frameHeight: 32 };
 const FRAMES_PER_ROW = 3;
 const DIRECTION_ROW = { down: 0, left: 1, right: 2, up: 3 };
 const WALK_CYCLE = [0, 1, 2, 1];
+// Width of the cover image rendered from a custom map in the editor
+const THUMBNAIL_WIDTH = 480;
+// Painted changes are handed to the page (which saves them) once the brush has rested this long
+const MAP_CHANGE_DELAY_MS = 600;
+// The brush outline draws above furniture and characters, like the furniture preview
+const PAINT_CURSOR_DEPTH = 900_000;
 // How quickly the camera catches up with the player (0-1 per frame)
 const CAMERA_LERP = 0.1;
-// Editor camera: how far past the fitted zoom the wheel can zoom in, each wheel notch, and key pan speed
+// Editor camera: how far past the play zoom the wheel can zoom in, each wheel notch, and key pan speed
 const EDITOR_MAX_ZOOM_FACTOR = 3;
 const EDITOR_ZOOM_STEP = 1.1;
 const EDITOR_PAN_PX_PER_SEC = 600;
@@ -43,6 +51,8 @@ export type EditModeData = {
   onPlace: (elementId: string, x: number, y: number) => Promise<SpaceElement | null>;
   // `undo` puts the same piece back in the same spot, for an Undo button
   onRemove: (placement: SpaceElement, undo: () => void) => Promise<boolean>;
+  // Custom maps only: the floors or walls were painted (the page saves, debounced)
+  onMapChange?: (map: CustomMap) => void;
 };
 
 // What React passes to createGame. onLoadProgress reports asset loading from 0 to 1.
@@ -73,9 +83,18 @@ export class WorldScene extends Phaser.Scene {
   // Furniture currently in the space, keyed by placement id
   private readonly placed = new Map<string, { data: SpaceElement; image: Phaser.GameObjects.Image }>();
   private buildTool: BuildTool | null = null;
+  // Custom maps: the drawn floors and walls, the editor's brush, and its outline under the pointer
+  private customView: CustomMapView | null = null;
+  private paintTool: PaintTool | null = null;
+  private paintCursor: Phaser.GameObjects.Rectangle | null = null;
+  // With the wall brush, tints the tile that becomes the wall's top (the outline also covers its front below)
+  private wallTopCursor: Phaser.GameObjects.Rectangle | null = null;
+  private mapChangeTimer: Phaser.Time.TimerEvent | null = null;
   private busy = false;
-  // Smallest zoom at which the map still covers the viewport
-  private fitZoom = MIN_ZOOM;
+  // Zoom range: fixed while playing (the map just covers the viewport); in the editor, from the whole map in
+  // view up to a few times closer
+  private minZoom = MIN_ZOOM;
+  private maxZoom = MIN_ZOOM;
   private panKeys: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key[]> | null = null;
 
   constructor() {
@@ -89,7 +108,8 @@ export class WorldScene extends Phaser.Scene {
   preload() {
     const { space } = this.ctx;
     const mapUrl = space.tmjUrl;
-    // Spaces created with dimensions only (possible through the API) have no map; create() draws a plain floor
+    // A custom map is drawn from the builder tilesets; spaces created with dimensions only (possible through the
+    // API) have no map at all, and create() draws a plain floor
     if (mapUrl) {
       this.load.tilemapTiledJSON("map", mapUrl);
 
@@ -103,6 +123,8 @@ export class WorldScene extends Phaser.Scene {
           this.load.image(ts.name, `${mapFolder}${fileName}`);
         }
       });
+    } else if (space.customMap) {
+      loadBuilder(this.load);
     }
 
     for (const { element } of space.elements) {
@@ -132,6 +154,9 @@ export class WorldScene extends Phaser.Scene {
       }
       this.tiledMap = this.cache.tilemap.get("map").data as TiledMap;
       this.setUpCamera(map.widthInPixels, map.heightInPixels);
+    } else if (space.customMap) {
+      this.customView = new CustomMapView(this, this.spaceWidth, this.spaceHeight, space.customMap);
+      this.setUpCamera(this.spaceWidth * TILE, this.spaceHeight * TILE);
     } else {
       this.drawPlainFloor();
       this.setUpCamera(this.spaceWidth * TILE, this.spaceHeight * TILE);
@@ -152,6 +177,9 @@ export class WorldScene extends Phaser.Scene {
     } else {
       this.setUpEditorCamera();
       this.setUpBuildInput();
+      // Leaving the editor right after painting still saves the last stroke
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.flushMapChange());
+      this.events.once(Phaser.Scenes.Events.DESTROY, () => this.flushMapChange());
     }
 
     this.ctx.onCreated(this);
@@ -160,6 +188,7 @@ export class WorldScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     this.player?.update();
     this.buildTool?.update();
+    this.updatePaintCursor();
     this.panWithKeys(delta);
   }
 
@@ -192,11 +221,105 @@ export class WorldScene extends Phaser.Scene {
     this.buildTool.select(element);
   }
 
+  /** Custom maps: the floor/wall brush or eraser to paint with, or null to stop painting. */
+  setPaintTool(tool: PaintTool | null) {
+    if (this.ctx.mode !== "edit" || !this.customView) return;
+    this.paintTool = tool;
+    if (!this.paintCursor) {
+      this.paintCursor = this.add
+        .rectangle(0, 0, TILE, TILE)
+        .setOrigin(0, 0)
+        .setFillStyle()
+        .setStrokeStyle(2, Phaser.Display.Color.HexStringToColor(themeColor("primary")).color)
+        .setDepth(PAINT_CURSOR_DEPTH);
+      this.wallTopCursor = this.add
+        .rectangle(0, 0, TILE, TILE, Phaser.Display.Color.HexStringToColor(themeColor("copy")).color)
+        .setOrigin(0, 0)
+        .setAlpha(parseFloat(cssVar("--game-wall-top-cursor-opacity")))
+        .setDepth(PAINT_CURSOR_DEPTH);
+    }
+    this.paintCursor.setVisible(!!tool);
+    this.wallTopCursor?.setVisible(tool?.kind === "wall");
+  }
+
+  /** Custom maps: paints every tile with one floor style. */
+  fillFloor(style: number) {
+    if (this.customView?.fillFloor(style)) this.mapChanged();
+  }
+
+  /**
+   * Renders the whole space (floors, walls and furniture, no players) to a PNG a few hundred pixels wide, for the
+   * dashboard card. Resolves with null if it couldn't be drawn.
+   */
+  captureThumbnail(): Promise<Blob | null> {
+    const width = this.spaceWidth * TILE;
+    const height = this.spaceHeight * TILE;
+    const rt = this.make.renderTexture({ width, height }, false);
+    for (const layer of this.customView?.layers ?? []) rt.draw(layer);
+    const furniture = [...this.placed.values()].map(({ image }) => image).sort((a, b) => a.depth - b.depth);
+    for (const image of furniture) rt.draw(image);
+
+    return new Promise((resolve) => {
+      rt.snapshot((snapshot) => {
+        rt.destroy();
+        if (!(snapshot instanceof HTMLImageElement)) return resolve(null);
+        const canvas = document.createElement("canvas");
+        canvas.width = THUMBNAIL_WIDTH;
+        canvas.height = Math.round((THUMBNAIL_WIDTH * height) / width);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(snapshot, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => resolve(blob), "image/png");
+      });
+    });
+  }
+
+  /** Keeps the brush outline on the tile under the pointer; a wall's outline spans its top and front. */
+  private updatePaintCursor() {
+    if (!this.paintCursor?.visible) return;
+    const world = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    const x = Math.floor(world.x / TILE);
+    const y = Math.floor(world.y / TILE);
+    const tiles = this.paintTool?.kind === "wall" && this.customView ? this.customView.wallFootprint(x, y) : 1;
+    this.paintCursor.setPosition(x * TILE, y * TILE).setSize(TILE, tiles * TILE);
+    this.wallTopCursor?.setPosition(x * TILE, y * TILE);
+  }
+
+  /** Applies the brush (left button) or the eraser (right button) to the tile under the pointer. */
+  private paintAt(pointer: Phaser.Input.Pointer) {
+    if (!this.customView || !this.paintTool) return;
+    const world = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    const tool: PaintTool = pointer.rightButtonDown() ? { kind: "erase" } : this.paintTool;
+    if (this.customView.paint(Math.floor(world.x / TILE), Math.floor(world.y / TILE), tool)) this.mapChanged();
+  }
+
+  private mapChanged() {
+    if (this.ctx.mode !== "edit" || !this.customView) return;
+    this.rebuildGrid();
+    this.mapChangeTimer?.remove();
+    this.mapChangeTimer = this.time.delayedCall(MAP_CHANGE_DELAY_MS, () => this.flushMapChange());
+  }
+
+  /** Hands the painted map to the page now (after a pause, or when the editor closes mid-stroke). */
+  private flushMapChange() {
+    if (!this.mapChangeTimer || this.ctx.mode !== "edit" || !this.customView) return;
+    this.mapChangeTimer.remove();
+    this.mapChangeTimer = null;
+    this.ctx.onMapChange?.(this.customView.current);
+  }
+
   private setUpBuildInput() {
     // Right-click removes furniture, so keep the browser menu out of the way
     this.input.mouse?.disableContextMenu();
 
+    // Painting a custom map: click or drag with the brush, right button to erase
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
+      if (this.paintTool && (pointer.leftButtonDown() || pointer.rightButtonDown())) this.paintAt(pointer);
+    });
+
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
+      if (this.paintTool) return this.paintAt(pointer);
       if (this.busy) return;
       if (pointer.rightButtonDown()) void this.removeAt(pointer);
       else if (pointer.leftButtonDown()) void this.placeSelected();
@@ -290,7 +413,8 @@ export class WorldScene extends Phaser.Scene {
       this.spaceWidth,
       this.spaceHeight,
       this.tiledMap,
-      [...this.placed.values()].map(({ data: { x, y, element } }) => ({ x, y, ...element }))
+      [...this.placed.values()].map(({ data: { x, y, element } }) => ({ x, y, ...element })),
+      this.customView?.current ?? null
     );
   }
 
@@ -345,7 +469,11 @@ export class WorldScene extends Phaser.Scene {
         this.reportPresence();
       })
       .on("element-added", (placement) => void this.addElement(placement))
-      .on("element-removed", ({ id }) => this.removeElement(id));
+      .on("element-removed", ({ id }) => this.removeElement(id))
+      .on("map-updated", (map) => {
+        this.customView?.setMap(map);
+        this.rebuildGrid();
+      });
 
     network.connect();
   }
@@ -440,11 +568,20 @@ export class WorldScene extends Phaser.Scene {
     cam.setBounds(0, 0, worldWidth, worldHeight);
     cam.centerOn(worldWidth / 2, worldHeight / 2);
 
-    // Zoom in enough that the map always covers the viewport (no empty margins on big screens).
-    // The editor may be zoomed in further, so only raise the zoom when it falls below the fit.
+    // Playing: zoom in enough that the map always covers the viewport (no empty margins on big screens).
+    // Editing: start with the whole map in view, and allow zooming from there up to a few times the play zoom.
+    let first = true;
     const fit = () => {
-      this.fitZoom = Math.max(MIN_ZOOM, this.scale.width / worldWidth, this.scale.height / worldHeight);
-      cam.setZoom(Math.max(this.ctx.mode === "edit" ? cam.zoom : 0, this.fitZoom));
+      const cover = Math.max(MIN_ZOOM, this.scale.width / worldWidth, this.scale.height / worldHeight);
+      if (this.ctx.mode === "edit") {
+        this.minZoom = Math.min(cover, this.scale.width / worldWidth, this.scale.height / worldHeight);
+        this.maxZoom = cover * EDITOR_MAX_ZOOM_FACTOR;
+        cam.setZoom(first ? this.minZoom : Phaser.Math.Clamp(cam.zoom, this.minZoom, this.maxZoom));
+      } else {
+        this.minZoom = this.maxZoom = cover;
+        cam.setZoom(cover);
+      }
+      first = false;
     };
     fit();
     this.scale.on("resize", fit);
@@ -458,7 +595,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.input.on(Phaser.Input.Events.POINTER_WHEEL, (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
       const next = dy > 0 ? cam.zoom / EDITOR_ZOOM_STEP : cam.zoom * EDITOR_ZOOM_STEP;
-      cam.setZoom(Phaser.Math.Clamp(next, this.fitZoom, this.fitZoom * EDITOR_MAX_ZOOM_FACTOR));
+      cam.setZoom(Phaser.Math.Clamp(next, this.minZoom, this.maxZoom));
     });
 
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {

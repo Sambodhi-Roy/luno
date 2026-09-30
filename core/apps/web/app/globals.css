@@ -92,6 +92,8 @@
   /* How far below the top of the sprite frame the label sits, in world pixels (negative: above it, since
      heads reach the top of the frame) */
   --game-label-offset-y: -2px;
+  /* Custom map editor: how strongly the wall brush tints the tile that becomes the wall's top */
+  --game-wall-top-cursor-opacity: 0.35;
   /* Name text is rendered this many times sharper than the screen, so it stays crisp when the camera zooms in */
   --game-label-supersample: 4;
   /* Ellipse under the local player's feet */

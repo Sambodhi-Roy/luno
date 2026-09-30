@@ -24,8 +24,8 @@ export async function api<T>(path: string, { method = "GET", body }: ApiOptions 
 }
 
 /** Sends files as multipart form data (the browser sets the Content-Type boundary itself). */
-export async function upload<T>(path: string, form: FormData): Promise<T> {
-  return request<T>(path, { method: "POST", body: form });
+export async function upload<T>(path: string, form: FormData, method: "POST" | "PUT" = "POST"): Promise<T> {
+  return request<T>(path, { method, body: form });
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
