@@ -5,8 +5,8 @@ import { bodyFont, cssVar, themeColor } from "@/lib/theme";
 export const TILE = 32;
 export type Direction = "up" | "down" | "left" | "right";
 
-// Sprite frames are 16x32; drawn at 2x so the character is one tile wide and two tall
-const SPRITE_SCALE = 2;
+// Sprite frames are 32x32, drawn at 1x: one tile, at the same pixel density as the map
+const SPRITE_SCALE = 1;
 const SPRITE_HEIGHT = 32 * SPRITE_SCALE;
 // Names always render above characters and furniture, whose depth is their y position
 const LABEL_DEPTH = 1_000_000;

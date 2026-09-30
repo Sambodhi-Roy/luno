@@ -15,4 +15,6 @@
 module.exports = {
   testEnvironment: "node",
   testMatch: ["**/*.test.js"],
+  // Deletes the users, spaces, avatars, maps and furniture the tests created (see jest.teardown.js)
+  globalTeardown: "./jest.teardown.js",
 };

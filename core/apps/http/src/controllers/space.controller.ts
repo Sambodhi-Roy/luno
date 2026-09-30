@@ -383,6 +383,8 @@ export const getAllElements = async (req: Request, res: Response) => {
         height: true,
         static: true,
       },
+      // Stable palette order; seeded ids (seed-element-<name>) group related pieces
+      orderBy: { id: "asc" },
     });
 
     return res.status(200).json({

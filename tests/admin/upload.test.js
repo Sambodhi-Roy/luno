@@ -7,9 +7,25 @@ jest.setTimeout(30000);
 
 // Uploads land in the web app's public folder, served at /uploads/...
 const WEB_PUBLIC = path.resolve(__dirname, "../../core/apps/web/public");
-const OFFICE = path.join(WEB_PUBLIC, "assets/maps/office");
-const readAsset = (...parts) => fs.readFileSync(path.join(...parts));
 const diskPath = (url) => path.join(WEB_PUBLIC, url);
+
+// Built here rather than read from public/assets, which is a private submodule that may not be checked out
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64"
+);
+const TILESET_NAMES = ["floor.png", "furniture.png"];
+const tmj = Buffer.from(
+  JSON.stringify({
+    type: "map",
+    width: 25,
+    height: 25,
+    tilewidth: 32,
+    tileheight: 32,
+    layers: [{ type: "tilelayer", name: "Ground", width: 25, height: 25, data: new Array(625).fill(0) }],
+    tilesets: TILESET_NAMES.map((image, i) => ({ firstgid: 1 + i * 16, name: image, image, columns: 4, tilecount: 16 })),
+  })
+);
 
 describe("Admin uploads", () => {
   let admin, user;
@@ -24,8 +40,6 @@ describe("Admin uploads", () => {
   afterAll(() => {
     for (const p of created) fs.rmSync(p, { recursive: true, force: true });
   });
-
-  const png = readAsset(WEB_PUBLIC, "assets/elements/chair.png");
 
   test("Normal users cannot upload", async () => {
     const res = await uploadImage(user.token, "element", png);
@@ -52,16 +66,12 @@ describe("Admin uploads", () => {
     expect(fs.readFileSync(file).equals(png)).toBe(true);
   });
 
-  const tmj = readAsset(OFFICE, "office.tmj");
-  const tilesets = ["Room_Builder_free_32x32.png", "Interiors_free_32x32.png"].map((name) => ({
-    name,
-    data: readAsset(OFFICE, name),
-  }));
+  const tilesets = TILESET_NAMES.map((name) => ({ name, data: png }));
 
   test("A map missing one of its tileset images is rejected", async () => {
     const res = await uploadMap(admin.token, tmj, tilesets.slice(0, 1));
     expect(res.status).toBe(400);
-    expect(res.data.message).toContain("Interiors_free_32x32.png");
+    expect(res.data.message).toContain("furniture.png");
   });
 
   test("A file that isn't a Tiled map is rejected", async () => {

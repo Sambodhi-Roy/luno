@@ -75,16 +75,13 @@
   --duration-fast: 150ms;
   --duration-base: 200ms;
 
-  /* Character sprite sheets (e.g. /assets/characters/adam.png) are 16x32 frames; frame 3 faces down */
-  --sprite-frame-w: 16px;
+  /* Character sprite sheets (e.g. /assets/characters/adam.png) are 32x32 frames, 3 per row, one row per
+     direction with "down" first; frame 1 is the standing pose facing down. The walk-down preview (sprite-walk
+     keyframes) steps through frames 0, 1, 2, 1 of that row. */
+  --sprite-frame-w: 32px;
   --sprite-frame-h: 32px;
-  --sprite-idle-frame: 3;
-  /* Walk-down cycle used by animated previews: 6 frames in row 2 starting at column 18 (frame 66 of a
-     24-column sheet) */
-  --sprite-walk-row: 2;
-  --sprite-walk-first-col: 18;
-  --sprite-walk-frames: 6;
-  --sprite-walk-duration: 0.6s;
+  --sprite-idle-frame: 1;
+  --sprite-walk-duration: 0.5s;
 
   /* Name labels drawn above characters in the game canvas (read by game/entities/Avatar.ts) */
   --game-label-font-size: 9px;
@@ -92,9 +89,9 @@
   --game-label-padding-y: 2px;
   --game-label-radius: 8px;
   --game-label-opacity: 0.85;
-  /* How far below the top of the sprite frame the label sits (frames have empty space above the head), in
-     world pixels */
-  --game-label-offset-y: 10px;
+  /* How far below the top of the sprite frame the label sits, in world pixels (negative: above it, since
+     heads reach the top of the frame) */
+  --game-label-offset-y: -2px;
   /* Name text is rendered this many times sharper than the screen, so it stays crisp when the camera zooms in */
   --game-label-supersample: 4;
   /* Ellipse under the local player's feet */
@@ -398,6 +395,8 @@
 /* Box sized to one sprite frame at --sprite-scale; the inner .avatar-sprite-frame shows the frame */
 @utility avatar-sprite {
   --sprite-scale: 2;
+  /* Never squeezed by a smaller flex parent (the badge circle crops it instead) */
+  flex-shrink: 0;
   width: calc(var(--sprite-frame-w) * var(--sprite-scale));
   height: calc(var(--sprite-frame-h) * var(--sprite-scale));
 }
@@ -424,23 +423,25 @@
 
 /* Plays the walk-down cycle instead of standing still (avatar picker, landing art) */
 @utility avatar-sprite-walking {
-  animation: sprite-walk var(--sprite-walk-duration) steps(var(--sprite-walk-frames)) infinite;
+  animation: sprite-walk var(--sprite-walk-duration) step-end infinite;
 }
 
-/* Circle behind a small avatar, like a profile picture */
+/* Circle behind an avatar's head and shoulders, like a profile picture (the top of a 2x sprite shows) */
 @utility avatar-badge {
-  @apply flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-raised ring-2 ring-primary/40;
+  @apply flex size-9 shrink-0 items-start justify-center overflow-hidden rounded-full bg-raised ring-2 ring-primary/40;
 }
 
+/* Walk-down row: frames 0, 1, 2, 1 */
 @keyframes sprite-walk {
-  from {
-    background-position:
-      calc(var(--sprite-walk-first-col) * var(--sprite-frame-w) * -1)
-      calc(var(--sprite-walk-row) * var(--sprite-frame-h) * -1);
+  0%,
+  100% {
+    background-position: 0 0;
   }
-  to {
-    background-position:
-      calc((var(--sprite-walk-first-col) + var(--sprite-walk-frames)) * var(--sprite-frame-w) * -1)
-      calc(var(--sprite-walk-row) * var(--sprite-frame-h) * -1);
+  25%,
+  75% {
+    background-position: calc(var(--sprite-frame-w) * -1) 0;
+  }
+  50% {
+    background-position: calc(var(--sprite-frame-w) * -2) 0;
   }
 }

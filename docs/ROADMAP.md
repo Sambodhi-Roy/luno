@@ -56,7 +56,7 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 - [x] API client and auth (cookie with `credentials: include`, CORS on `http`), plus `GET /user/me`, `POST /user/signout`, `GET /maps`
 - [x] `WorldScene` receives the space, loads the map's `.tmj` and tilesets dynamically, and renders `spaceElements`. Static elements collide on their bottom row.
 - [x] Fix the `GameCanvas` mount race (StrictMode currently creates two Phaser games)
-- [x] Seed script (`npx prisma db seed`): the "Office" map, 6 furniture elements, the "Adam" avatar
+- [x] Seed script (`npx prisma db seed`): the "Office" map, 6 furniture elements, the "Adam" avatar (later: Office and Village maps, 62 avatars)
 
 **Done when:** a user can sign up, create a space from the sample map, open it, and walk around alone with elements loaded from the DB. ✅ Verified in headless Chrome, and 34/34 HTTP tests pass.
 
@@ -97,11 +97,17 @@ A pass to make the app feel like a finished product before the social layer. The
 - [x] In game: each player's chosen avatar (sheets load on demand and fall back to the default character), rounded name tags, and a purple tag and floor marker for yourself
 - [x] Editor: floating top bar with a saving indicator, a collapsible furniture panel (bottom sheet on phones) with retry, toasts for errors, and Undo after removing furniture
 
+### Between Phases 3 and 4: art swap
+The first art was LimeZu's free pack, which is non-commercial only, and its 16x32 avatars were drawn at 2x over 32px tiles.
+- [x] All art is now Pipoya's free 32x32 packs (commercial use allowed, no redistribution), kept in the private `luno-assets` repo and mounted as a submodule at `apps/web/public/assets`
+- [x] Maps: a rebuilt 25x25 Office (same id, so existing spaces keep working) and a 60x60 Village converted from Pipoya's sample map, both with a hidden `Collision` layer
+- [x] 62 avatars (every human Pipoya character, first colour variant) in the 32x32, 3x4 layout, drawn at 1x so characters match the map's pixel size, and 67 furniture and outdoor pieces cropped from the tileset (listed in the assets repo's `elements.json`, which the seed reads)
+
 ### Phase 4: Social layer
 - [ ] Text chat, both space-wide and proximity
 - [ ] Online-users sidebar, emotes and reactions, follow a user
 - [x] Invite links, with an optional private-space flag (done early, see above)
-- [x] Avatar sprite sheets per `Avatar`, replacing the hardcoded "adam" (done in the UI polish pass; every sheet must share adam's layout)
+- [x] Avatar sprite sheets per `Avatar`, replacing the hardcoded "adam" (done in the UI polish pass; every sheet shares one layout, now Pipoya's 32x32 3x4)
 
 ### Phase 5: Proximity audio/video (LiveKit)
 - [ ] `POST /space/:id/av-token` issues a LiveKit token (room = spaceId, identity = userId)
@@ -119,6 +125,8 @@ A pass to make the app feel like a finished product before the social layer. The
 
 ### Phase 7: Ship it
 - [ ] Deploy: web on Vercel, `http` and `ws` on Fly.io or Railway, Postgres on Neon, LiveKit Cloud
+- [ ] Asset hosting: give the deploy read access to the private `luno-assets` submodule, or move assets and admin uploads to object storage (e.g. Cloudflare R2) and store absolute URLs
+- [ ] Credit Pipoya in the app (an about or credits page)
 - [ ] Docker Compose for local development
 - [ ] GitHub Actions CI: typecheck, lint, and integration tests
 - [ ] Hardening: rate limits, WS message validation, auth on every WS message
