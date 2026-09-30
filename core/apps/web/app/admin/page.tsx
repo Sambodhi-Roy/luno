@@ -151,7 +151,7 @@ export default function AdminPage() {
             id="avatars"
             icon={Shirt}
             title="Avatar"
-            description="A character sprite sheet with the same layout as the built-in one: 16×32 frames, 24 per row."
+            description="A character sprite sheet with the same layout as the built-in ones: 32×32 frames, 3 per row, 4 rows."
             submitLabel="Add avatar"
             onSubmit={async (form) => {
               const imageUrl = await uploadImage(fileFrom(form, "sheet"), "avatar");
@@ -180,7 +180,7 @@ export default function AdminPage() {
             <label className="block">
               <Label>Sprite sheet (PNG)</Label>
               <ImageInput name="sheet" required />
-              <Hint>Walk cycles must sit where they do in /assets/characters/adam.png, or the character won&apos;t animate right.</Hint>
+              <Hint>Pipoya / RPG Maker layout: rows face down, left, right, up, and the middle frame of each row is the standing pose.</Hint>
             </label>
           </AdminForm>
 

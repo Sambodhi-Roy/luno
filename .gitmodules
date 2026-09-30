@@ -1,0 +1,3 @@
+[submodule "core/apps/web/public/assets"]
+	path = core/apps/web/public/assets
+	url = https://github.com/Sambodhi-Roy/luno-assets.git

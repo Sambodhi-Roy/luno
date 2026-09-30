@@ -30,7 +30,7 @@ export function AvatarSprite({
 export function AvatarBadge({ imageUrl }: { imageUrl: string | null }) {
   return (
     <span className="avatar-badge">
-      <AvatarSprite imageUrl={imageUrl} size="sm" />
+      <AvatarSprite imageUrl={imageUrl} />
     </span>
   );
 }

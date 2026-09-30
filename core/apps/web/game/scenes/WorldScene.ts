@@ -12,12 +12,12 @@ const MIN_ZOOM = 1.5;
 const FALLBACK_MAP_URL = "/assets/maps/office/office.tmj";
 // Used for anyone without an avatar, and when an avatar's sheet fails to load
 const DEFAULT_CHARACTER_URL = DEFAULT_AVATAR_URL;
-// Every character sheet shares this layout (a 24-column sheet of 16x32 frames): idle frames 0-3, then walk
-// cycles of 6 frames starting at frame 48
-const CHARACTER_FRAME = { frameWidth: 16, frameHeight: 32 };
-const IDLE_FRAMES = { right: 0, up: 1, left: 2, down: 3 };
-const WALK_START = { right: 48, up: 54, left: 60, down: 66 };
-const WALK_FRAMES = 6;
+// Every character sheet shares this layout (Pipoya / RPG Maker): 32x32 frames, 3 per row, one row per direction.
+// The middle frame is the standing pose; walking steps through left foot, standing, right foot, standing.
+const CHARACTER_FRAME = { frameWidth: 32, frameHeight: 32 };
+const FRAMES_PER_ROW = 3;
+const DIRECTION_ROW = { down: 0, left: 1, right: 2, up: 3 };
+const WALK_CYCLE = [0, 1, 2, 1];
 // How quickly the camera catches up with the player (0-1 per frame)
 const CAMERA_LERP = 0.1;
 // Editor camera: how far past the fitted zoom the wheel can zoom in, each wheel notch, and key pan speed
@@ -464,16 +464,17 @@ export class WorldScene extends Phaser.Scene {
     if (anims.exists(animKey(key, "idle-down"))) return;
 
     for (const dir of ["right", "up", "left", "down"] as const) {
+      const first = DIRECTION_ROW[dir] * FRAMES_PER_ROW;
       anims.create({
         key: animKey(key, `idle-${dir}`),
-        frames: [{ key, frame: IDLE_FRAMES[dir] }],
+        frames: [{ key, frame: first + 1 }],
         frameRate: 1,
         repeat: -1,
       });
       anims.create({
         key: animKey(key, `walk-${dir}`),
-        frames: anims.generateFrameNumbers(key, { start: WALK_START[dir], end: WALK_START[dir] + WALK_FRAMES - 1 }),
-        frameRate: 10,
+        frames: anims.generateFrameNumbers(key, { frames: WALK_CYCLE.map((i) => first + i) }),
+        frameRate: 8,
         // Loops while stepping tile to tile; Avatar switches back to idle when movement stops
         repeat: -1,
       });
