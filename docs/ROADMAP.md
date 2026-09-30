@@ -119,7 +119,10 @@ The first art was LimeZu's free pack, which is non-commercial only, and its 16x3
 **Done when:** walking toward someone brings in their video, and walking away drops it.
 
 ### Phase 6: Customisable maps and interactive objects
-- [ ] Users can upload custom Tiled maps, followed by an in-app tile painter
+- [x] Custom maps: "Custom map" when creating a space opens the editor on a walled room (small 20x15, medium 32x24 or large 48x36). The owner paints floors, draws walls (their tops and fronts are drawn automatically, and they block movement), and places furniture. Saves go live to everyone in the space, and the dashboard cover is rendered from the map.
+- [x] Usernames are case-insensitive (`citext`), so "Sam" and "sam" can no longer be two different accounts
+- [ ] Custom maps: undo for painting, more styles (outdoor terrain, water), and resizing a map after it's created
+- [ ] Users can upload their own Tiled maps (admins can already)
 - [ ] Portals (teleport or change space), embedded iframes, whiteboards, and YouTube on "press X"
 - [ ] Multiple rooms per space (linked maps)
 
