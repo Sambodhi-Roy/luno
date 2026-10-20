@@ -1,8 +1,14 @@
 import * as Phaser from "phaser";
-import { buildCollisionGrid, type CollisionGrid, type CustomMap, type TiledMap } from "@repo/protocol/rules";
-import type { RemoteUser, SpaceElement } from "@repo/protocol";
+import {
+  buildCollisionGrid,
+  findPath,
+  type CollisionGrid,
+  type CustomMap,
+  type TiledMap,
+} from "@repo/protocol/rules";
+import type { RemoteUser, SpaceElement, Visibility } from "@repo/protocol";
 import { DEFAULT_AVATAR_URL } from "@/lib/avatars";
-import { cssVar, themeColor } from "@/lib/theme";
+import { bodyFont, cssVar, themeColor } from "@/lib/theme";
 import type { Element, Me, SpaceDetail } from "@/lib/types";
 import type { PaintTool } from "@/lib/builder";
 import { CustomMapView, loadBuilder } from "../customMap";
@@ -34,14 +40,31 @@ const CAMERA_LERP = 0.1;
 const EDITOR_MAX_ZOOM_FACTOR = 3;
 const EDITOR_ZOOM_STEP = 1.1;
 const EDITOR_PAN_PX_PER_SEC = 600;
+// Playing: the wheel or the dock's buttons zoom from the "map covers the screen" zoom up to twice as close
+const PLAY_MAX_ZOOM_FACTOR = 2;
+const PLAY_ZOOM_STEP = 1.25;
+const PLAY_ZOOM_KEY = "luno:play-zoom";
+// A press that moves further than this (in screen pixels) before release is a drag, not a click to walk
+const CLICK_SLOP_PX = 8;
+// The click-to-walk destination marker sits on the floor, under characters and furniture
+const DESTINATION_DEPTH = 0;
 
 type TiledTileset = { name: string; image: string };
+
+/** Someone in the space, for the people list. */
+export type Person = { userId: string; username: string; avatarUrl: string | null; isSelf: boolean };
 
 // Playing: walk around with everyone else over the WebSocket
 export type PlayModeData = {
   mode: "play";
   onStatus: (status: ConnectionStatus) => void;
-  onPresence: (online: number) => void;
+  // Everyone in the space, you first; called whenever someone joins, leaves or changes avatar
+  onPresence: (people: Person[]) => void;
+  // The owner renamed the space or changed its visibility
+  onSpaceUpdated: (info: { name: string; visibility: Visibility }) => void;
+  // Someone came in or left after we joined (not those already here, nor someone switching tabs)
+  // `here` counts everyone in the space afterwards, you included
+  onArrival: (username: string, kind: "joined" | "left", here: number) => void;
 };
 
 // Editing (the owner's editor page): no avatar or connection, a free camera, and furniture placement
@@ -78,6 +101,8 @@ export class WorldScene extends Phaser.Scene {
   private readonly remotes = new Map<string, Avatar>();
   // Players whose character sheet is still loading, kept up to date until their Avatar can be drawn
   private readonly pendingRemotes = new Map<string, RemoteUser>();
+  // Each other player's avatar sheet URL, for the people list
+  private readonly avatarUrls = new Map<string, string | null>();
   // One load per character sheet, shared by everyone wearing it
   private readonly characterLoads = new Map<string, Promise<string>>();
   // Furniture currently in the space, keyed by placement id
@@ -87,6 +112,8 @@ export class WorldScene extends Phaser.Scene {
   private customView: CustomMapView | null = null;
   private paintTool: PaintTool | null = null;
   private paintCursor: Phaser.GameObjects.Rectangle | null = null;
+  // Editor, custom maps: where people appear
+  private spawnMarker: Phaser.GameObjects.Container | null = null;
   // With the wall brush, tints the tile that becomes the wall's top (the outline also covers its front below)
   private wallTopCursor: Phaser.GameObjects.Rectangle | null = null;
   private mapChangeTimer: Phaser.Time.TimerEvent | null = null;
@@ -96,6 +123,12 @@ export class WorldScene extends Phaser.Scene {
   private minZoom = MIN_ZOOM;
   private maxZoom = MIN_ZOOM;
   private panKeys: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key[]> | null = null;
+  // Playing: how far past the covering zoom the player has zoomed in (1 = not at all)
+  private playZoom = readPlayZoom();
+  // Playing: our own avatar sheet (it can change while we're here)
+  private myAvatarUrl: string | null = null;
+  // Playing: the tile a click is walking to
+  private destination: Phaser.GameObjects.Rectangle | null = null;
 
   constructor() {
     super("WorldScene");
@@ -103,6 +136,7 @@ export class WorldScene extends Phaser.Scene {
 
   init(data: WorldSceneData) {
     this.ctx = data;
+    this.myAvatarUrl = data.me.avatar?.imageUrl ?? null;
   }
 
   preload() {
@@ -172,11 +206,13 @@ export class WorldScene extends Phaser.Scene {
 
     if (this.ctx.mode === "play") {
       this.connect();
+      this.setUpPlayInput();
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.network?.close());
       this.events.once(Phaser.Scenes.Events.DESTROY, () => this.network?.close());
     } else {
       this.setUpEditorCamera();
       this.setUpBuildInput();
+      this.drawSpawnMarker();
       // Leaving the editor right after painting still saves the last stroke
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.flushMapChange());
       this.events.once(Phaser.Scenes.Events.DESTROY, () => this.flushMapChange());
@@ -207,6 +243,48 @@ export class WorldScene extends Phaser.Scene {
       // Otherwise a key held when the dialog opened stays "down"
       keyboard.resetKeys();
     }
+  }
+
+  /* ---------- Playing (called from React through the game controller) ---------- */
+
+  /** Zooms the play camera in (1) or out (-1) a notch. */
+  zoomBy(direction: 1 | -1) {
+    if (this.ctx.mode !== "play") return;
+    const next = Phaser.Math.Clamp(
+      direction > 0 ? this.playZoom * PLAY_ZOOM_STEP : this.playZoom / PLAY_ZOOM_STEP,
+      1,
+      PLAY_MAX_ZOOM_FACTOR
+    );
+    if (next === this.playZoom) return;
+    this.playZoom = next;
+    this.cameras.main.setZoom(this.minZoom * next);
+    try {
+      localStorage.setItem(PLAY_ZOOM_KEY, String(next));
+    } catch {
+      // Not remembered; it starts unzoomed next time
+    }
+  }
+
+  /** Walks up to someone in the space (from the people list). */
+  walkToPerson(userId: string) {
+    const target = this.remotes.get(userId);
+    if (!target || !this.player) return;
+    const path = findPath(this.grid, { x: this.player.tileX, y: this.player.tileY }, { x: target.tileX, y: target.tileY });
+    // Stop beside them rather than on top of them
+    const end = path.at(-1);
+    if (end && end.x === target.tileX && end.y === target.tileY) path.pop();
+    this.walk(path);
+  }
+
+  /** Our own avatar changed (the server announces it too; both lead to the same sheet). */
+  setMyAvatar(url: string | null) {
+    if (url === this.myAvatarUrl) return;
+    this.myAvatarUrl = url;
+    this.reportPresence();
+    void this.ensureCharacter(url).then((key) => {
+      // Skip if it changed again while this sheet loaded
+      if (url === this.myAvatarUrl) this.player?.setTexture(key);
+    });
   }
 
   /* ---------- Editing (called from React through the game controller) ---------- */
@@ -297,8 +375,33 @@ export class WorldScene extends Phaser.Scene {
   private mapChanged() {
     if (this.ctx.mode !== "edit" || !this.customView) return;
     this.rebuildGrid();
+    this.drawSpawnMarker();
     this.mapChangeTimer?.remove();
     this.mapChangeTimer = this.time.delayedCall(MAP_CHANGE_DELAY_MS, () => this.flushMapChange());
+  }
+
+  /** Editor: marks a custom map's spawn point (a tinted tile with a label), when one is set. */
+  private drawSpawnMarker() {
+    const spawn = this.customView?.spawn;
+    if (!spawn) return this.spawnMarker?.setVisible(false);
+    if (!this.spawnMarker) {
+      const color = Phaser.Display.Color.HexStringToColor(themeColor("success")).color;
+      const tile = this.add
+        .rectangle(0, 0, TILE, TILE, color, parseFloat(cssVar("--game-spawn-opacity")))
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, color);
+      const label = this.add
+        .text(TILE / 2, -2, "Spawn", {
+          fontFamily: bodyFont(),
+          fontSize: cssVar("--game-label-font-size"),
+          fontStyle: "600",
+          color: themeColor("success"),
+          resolution: window.devicePixelRatio * parseFloat(cssVar("--game-label-supersample")),
+        })
+        .setOrigin(0.5, 1);
+      this.spawnMarker = this.add.container(0, 0, [tile, label]).setDepth(PAINT_CURSOR_DEPTH - 1);
+    }
+    this.spawnMarker.setPosition(spawn.x * TILE, spawn.y * TILE).setVisible(true);
   }
 
   /** Hands the painted map to the page now (after a pause, or when the editor closes mid-stroke). */
@@ -438,9 +541,11 @@ export class WorldScene extends Phaser.Scene {
             spawn.x,
             spawn.y,
             this.ctx.me.username,
-            this.loadedCharacterKey(this.ctx.me.avatar?.imageUrl ?? null),
+            this.loadedCharacterKey(this.myAvatarUrl),
+            "down",
             (x, y) => this.grid.isWalkable(x, y),
-            (x, y) => network.sendMove(x, y)
+            (x, y, dir) => network.sendMove(x, y, dir),
+            () => this.clearDestination()
           );
           this.cameras.main.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
         }
@@ -450,21 +555,43 @@ export class WorldScene extends Phaser.Scene {
         // A known user re-joining (e.g. from another tab) just moves to their new spot, unless they changed
         // avatar, in which case they're redrawn
         const existing = this.remotes.get(user.userId);
+        if (this.ctx.mode === "play" && !existing && !this.pendingRemotes.has(user.userId)) {
+          this.ctx.onArrival(user.username, "joined", this.headcount() + 1);
+        }
         if (existing && existing.textureKey === characterKey(user.avatarUrl ?? DEFAULT_CHARACTER_URL)) {
           existing.snapTo(user.x, user.y);
+          existing.turn(user.dir);
         } else {
           this.removeRemote(user.userId);
           this.addRemote(user);
         }
         this.reportPresence();
       })
-      .on("movement", ({ userId, x, y }) => {
+      .on("movement", ({ userId, x, y, dir }) => {
         const pending = this.pendingRemotes.get(userId);
-        if (pending) this.pendingRemotes.set(userId, { ...pending, x, y });
-        else this.remotes.get(userId)?.moveTo(x, y);
+        if (pending) this.pendingRemotes.set(userId, { ...pending, x, y, dir });
+        else this.remotes.get(userId)?.moveTo(x, y, dir);
+      })
+      .on("user-updated", ({ userId, avatarUrl }) => {
+        if (userId === this.ctx.me.id) return this.setMyAvatar(avatarUrl);
+        const pending = this.pendingRemotes.get(userId);
+        if (pending) {
+          // Still loading the old sheet: load the new one instead
+          this.addRemote({ ...pending, avatarUrl });
+        } else {
+          const avatar = this.remotes.get(userId);
+          if (avatar) void this.ensureCharacter(avatarUrl).then((key) => avatar.setTexture(key));
+          this.avatarUrls.set(userId, avatarUrl);
+        }
+        this.reportPresence();
+      })
+      .on("space-updated", (info) => {
+        if (this.ctx.mode === "play") this.ctx.onSpaceUpdated(info);
       })
       .on("movement-rejected", ({ x, y }) => this.player?.snapTo(x, y))
       .on("user-left", ({ userId }) => {
+        const name = this.remotes.get(userId)?.name ?? this.pendingRemotes.get(userId)?.username;
+        if (name && this.ctx.mode === "play") this.ctx.onArrival(name, "left", this.headcount() - 1);
         this.removeRemote(userId);
         this.reportPresence();
       })
@@ -481,18 +608,20 @@ export class WorldScene extends Phaser.Scene {
   /** Draws another player once their character sheet has loaded (usually at once: it's cached). */
   private addRemote(user: RemoteUser) {
     this.pendingRemotes.set(user.userId, user);
+    this.avatarUrls.set(user.userId, user.avatarUrl);
     void this.ensureCharacter(user.avatarUrl).then((key) => {
       // Their latest position. Skip if they left while the sheet loaded, or re-joined wearing another avatar
       // (that join draws them instead).
       const latest = this.pendingRemotes.get(user.userId);
       if (!latest || latest.avatarUrl !== user.avatarUrl || !this.sys.isActive()) return;
       this.pendingRemotes.delete(user.userId);
-      this.remotes.set(user.userId, new Avatar(this, latest.x, latest.y, latest.username, key));
+      this.remotes.set(user.userId, new Avatar(this, latest.x, latest.y, latest.username, key, false, latest.dir));
     });
   }
 
   private removeRemote(userId: string) {
     this.pendingRemotes.delete(userId);
+    this.avatarUrls.delete(userId);
     this.remotes.get(userId)?.destroy();
     this.remotes.delete(userId);
   }
@@ -501,11 +630,75 @@ export class WorldScene extends Phaser.Scene {
     this.remotes.forEach((avatar) => avatar.destroy());
     this.remotes.clear();
     this.pendingRemotes.clear();
+    this.avatarUrls.clear();
+  }
+
+  /** Everyone in the space, us included. */
+  private headcount() {
+    return this.remotes.size + this.pendingRemotes.size + (this.player ? 1 : 0);
   }
 
   private reportPresence() {
     if (this.ctx.mode !== "play") return;
-    this.ctx.onPresence(this.remotes.size + this.pendingRemotes.size + (this.player ? 1 : 0));
+    const { me } = this.ctx;
+    const others: Person[] = [];
+    for (const [userId, avatar] of this.remotes) {
+      others.push({ userId, username: avatar.name, avatarUrl: this.avatarUrls.get(userId) ?? null, isSelf: false });
+    }
+    for (const user of this.pendingRemotes.values()) {
+      others.push({ userId: user.userId, username: user.username, avatarUrl: user.avatarUrl, isSelf: false });
+    }
+    others.sort((a, b) => a.username.localeCompare(b.username));
+    const self: Person[] = this.player
+      ? [{ userId: me.id, username: me.username, avatarUrl: this.myAvatarUrl, isSelf: true }]
+      : [];
+    this.ctx.onPresence([...self, ...others]);
+  }
+
+  /* ---------- Click to walk ---------- */
+
+  private setUpPlayInput() {
+    // A tap or click on the map walks there; a drag doesn't
+    this.input.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      if (pointer.button !== 0 || !this.player) return;
+      if (Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY) > CLICK_SLOP_PX) return;
+      const world = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+      this.walk(findPath(this.grid, { x: this.player.tileX, y: this.player.tileY }, { x: Math.floor(world.x / TILE), y: Math.floor(world.y / TILE) }));
+    });
+
+    this.input.on(
+      Phaser.Input.Events.POINTER_WHEEL,
+      (_p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+        if (dy !== 0) this.zoomBy(dy > 0 ? -1 : 1);
+      }
+    );
+  }
+
+  private walk(path: { x: number; y: number }[]) {
+    const end = path.at(-1);
+    if (!this.player || !end) return;
+    this.showDestination(end.x, end.y);
+    this.player.walkPath(path);
+  }
+
+  private showDestination(x: number, y: number) {
+    const primary = Phaser.Display.Color.HexStringToColor(themeColor("primary")).color;
+    if (!this.destination) {
+      this.destination = this.add
+        .rectangle(0, 0, TILE, TILE)
+        .setOrigin(0, 0)
+        .setFillStyle(primary, parseFloat(cssVar("--game-destination-opacity")))
+        .setStrokeStyle(2, primary)
+        .setDepth(DESTINATION_DEPTH);
+    }
+    this.tweens.killTweensOf(this.destination);
+    this.destination.setPosition(x * TILE, y * TILE).setAlpha(1).setVisible(true);
+  }
+
+  private clearDestination() {
+    const marker = this.destination;
+    if (!marker?.visible) return;
+    this.tweens.add({ targets: marker, alpha: 0, duration: 200, onComplete: () => marker.setVisible(false) });
   }
 
   /* ---------- Character sheets ---------- */
@@ -578,8 +771,9 @@ export class WorldScene extends Phaser.Scene {
         this.maxZoom = cover * EDITOR_MAX_ZOOM_FACTOR;
         cam.setZoom(first ? this.minZoom : Phaser.Math.Clamp(cam.zoom, this.minZoom, this.maxZoom));
       } else {
-        this.minZoom = this.maxZoom = cover;
-        cam.setZoom(cover);
+        this.minZoom = cover;
+        this.maxZoom = cover * PLAY_MAX_ZOOM_FACTOR;
+        cam.setZoom(cover * this.playZoom);
       }
       first = false;
     };
@@ -640,6 +834,16 @@ export class WorldScene extends Phaser.Scene {
         repeat: -1,
       });
     }
+  }
+}
+
+/** The play zoom remembered from last time (browser storage can be unavailable). */
+function readPlayZoom() {
+  try {
+    const saved = parseFloat(localStorage.getItem(PLAY_ZOOM_KEY) ?? "");
+    return Number.isFinite(saved) ? Phaser.Math.Clamp(saved, 1, PLAY_MAX_ZOOM_FACTOR) : 1;
+  } catch {
+    return 1;
   }
 }
 

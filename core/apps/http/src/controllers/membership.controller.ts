@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import client from "@repo/db/client";
+import { notifySpace } from "../lib/realtime.js";
 import type { Visibility } from "../lib/spaceAccess.js";
 
 // How many public spaces Explore lists
@@ -179,6 +180,8 @@ export const leaveSpace = async (req: Request, res: Response) => {
         message: "You are not a member of this space",
       });
     }
+    // Leaving a private space while still inside it (another tab) ends that visit
+    notifySpace(spaceId, { type: "access-changed", payload: { userId } });
 
     return res.status(200).json({ message: "Left space" });
   } catch (e) {

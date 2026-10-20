@@ -56,6 +56,10 @@ export const updateCustomMap = async (req: Request, res: Response) => {
     if (parsed.data.floor.length !== tiles || parsed.data.walls.length !== tiles) {
       return res.status(400).json({ message: `The map must have ${tiles} tiles (${space.width}x${space.height})` });
     }
+    const { spawn } = parsed.data;
+    if (spawn && (spawn.x < 0 || spawn.y < 0 || spawn.x >= space.width || spawn.y >= space.height)) {
+      return res.status(400).json({ message: "The spawn point must be inside the map" });
+    }
 
     await client.space.update({ where: { id: space.id }, data: { customMap: parsed.data } });
     notifySpace(space.id, { type: "map-updated", payload: parsed.data });

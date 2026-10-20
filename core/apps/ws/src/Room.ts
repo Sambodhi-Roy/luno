@@ -7,7 +7,10 @@ import {
   type RemoteUser,
   type ServerMessage,
   type SpaceElement,
+  type Tile,
   type TiledMap,
+  type Visibility,
+  tiledSpawnTiles,
 } from "@repo/protocol";
 import type { Session } from "./Session.js";
 
@@ -18,6 +21,8 @@ export class Room {
   // Keyed by placement (spaceElements row) id
   private readonly elements: Map<string, PlacedElement>;
   private _grid: CollisionGrid;
+  // Spawn tiles marked in the Tiled map (a custom map's spawn is read from customMap, which can change)
+  private readonly tiledSpawns: Tile[];
 
   constructor(
     readonly spaceId: string,
@@ -30,6 +35,7 @@ export class Room {
   ) {
     this.elements = new Map(elements.map(({ id, ...placed }) => [id, placed]));
     this._grid = this.buildGrid();
+    this.tiledSpawns = tiledMap ? tiledSpawnTiles(tiledMap) : [];
   }
 
   get grid() {
@@ -55,6 +61,20 @@ export class Room {
     this.customMap = map;
     this._grid = this.buildGrid();
     this.broadcast({ type: "map-updated", payload: map });
+  }
+
+  /** The owner renamed the space or changed its visibility. */
+  setInfo(name: string, visibility: Visibility) {
+    this.broadcast({ type: "space-updated", payload: { name, visibility } });
+  }
+
+  /** Disconnects everyone (e.g. the space was deleted). Their sockets' close handlers do the leaving. */
+  closeAll(code: number, reason: string) {
+    for (const session of [...this.sessions.values()]) session.kick(code, reason);
+  }
+
+  get sessionList() {
+    return [...this.sessions.values()];
   }
 
   private buildGrid() {
@@ -91,13 +111,28 @@ export class Room {
   }
 
   /**
-   * First walkable tile, searching outward from the centre in growing rings, that nobody is standing on.
+   * Where someone entering appears: their previous spot if they're coming back (and it's still walkable), else
+   * a free spawn tile marked on the map, else the free walkable tile nearest the marked spawn or the centre.
+   */
+  findSpawn(preferred?: Tile | null): Position {
+    if (preferred && this.grid.isWalkable(preferred.x, preferred.y)) return { x: preferred.x, y: preferred.y };
+
+    const occupied = new Set([...this.sessions.values()].map((s) => `${s.x},${s.y}`));
+    const marked = (this.customMap?.spawn ? [this.customMap.spawn] : this.tiledSpawns).filter((t) =>
+      this.grid.isWalkable(t.x, t.y)
+    );
+    const free = marked.filter((t) => !occupied.has(`${t.x},${t.y}`));
+    if (free.length > 0) return { ...free[Math.floor(Math.random() * free.length)]! };
+
+    const centre = marked[0] ?? { x: Math.floor(this.grid.width / 2), y: Math.floor(this.grid.height / 2) };
+    return this.nearestFree(centre, occupied);
+  }
+
+  /**
+   * First walkable tile nobody is standing on, searching outward from `centre` in growing rings.
    * Falls back to an occupied walkable tile when the space is full.
    */
-  findSpawn(): Position {
-    const occupied = new Set([...this.sessions.values()].map((s) => `${s.x},${s.y}`));
-    const cx = Math.floor(this.grid.width / 2);
-    const cy = Math.floor(this.grid.height / 2);
+  private nearestFree(centre: Tile, occupied: Set<string>): Position {
     const maxRadius = Math.max(this.grid.width, this.grid.height);
     let fallback: Position | null = null;
 
@@ -106,8 +141,8 @@ export class Room {
         for (let dx = -r; dx <= r; dx++) {
           // Only the ring at distance r; inner tiles were checked in earlier rounds
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const x = cx + dx;
-          const y = cy + dy;
+          const x = centre.x + dx;
+          const y = centre.y + dy;
           if (!this.grid.isWalkable(x, y)) continue;
           if (!occupied.has(`${x},${y}`)) return { x, y };
           fallback ??= { x, y };
@@ -115,6 +150,6 @@ export class Room {
       }
     }
 
-    return fallback ?? { x: cx, y: cy };
+    return fallback ?? centre;
   }
 }

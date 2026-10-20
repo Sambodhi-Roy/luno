@@ -1,12 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { internalEventSchema } from "@repo/protocol";
+import { internalEventSchema, internalUserEventSchema } from "@repo/protocol";
 import type { RoomManager } from "./RoomManager.js";
 
-// apps/http reports furniture and custom map changes here so they can be pushed to everyone in the space.
+// apps/http reports changes here so they can be pushed to everyone affected: furniture, maps and settings of a
+// space (/internal/spaces/:id/events), or a user's avatar (/internal/users/:id/events).
 // Not for browsers: requests must carry the shared INTERNAL_SECRET.
 
-const ROUTE = /^\/internal\/spaces\/([^/]+)\/events$/;
+const ROUTE = /^\/internal\/(spaces|users)\/([^/]+)\/events$/;
 // Events are small JSON objects; the largest is a custom map (two arrays of one id per tile, a few KB)
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -22,10 +23,18 @@ export async function handleInternalRequest(req: IncomingMessage, res: ServerRes
     return reply(res, 400, "Invalid body");
   }
 
+  const id = decodeURIComponent(match[2]!);
+  if (match[1] === "users") {
+    const parsed = internalUserEventSchema.safeParse(body);
+    if (!parsed.success) return reply(res, 400, "Invalid event");
+    rooms.applyUserEvent(id, parsed.data);
+    return reply(res, 204);
+  }
+
   const parsed = internalEventSchema.safeParse(body);
   if (!parsed.success) return reply(res, 400, "Invalid event");
 
-  await rooms.applyEvent(decodeURIComponent(match[1]!), parsed.data);
+  await rooms.applyEvent(id, parsed.data);
   reply(res, 204);
 }
 

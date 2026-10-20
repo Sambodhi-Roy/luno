@@ -5,7 +5,7 @@ import type { PaintTool } from "@/lib/builder";
 import { WorldScene, type GameOptions } from "./scenes/WorldScene";
 
 export type { ConnectionStatus } from "./network/NetworkManager";
-export type { EditModeData, GameOptions, PlayModeData } from "./scenes/WorldScene";
+export type { EditModeData, GameOptions, Person, PlayModeData } from "./scenes/WorldScene";
 
 /** What React can do with a running game. */
 export type GameController = {
@@ -20,6 +20,12 @@ export type GameController = {
   fillFloor: (style: number) => void;
   // Edit mode: renders the space to a small PNG for its cover (null before the scene is ready or on failure)
   captureThumbnail: () => Promise<Blob | null>;
+  // Play mode: zoom the camera in (1) or out (-1) a notch
+  zoomBy: (direction: 1 | -1) => void;
+  // Play mode: walk up to someone in the space
+  walkToPerson: (userId: string) => void;
+  // Play mode: we picked another avatar
+  setMyAvatar: (url: string | null) => void;
 };
 
 // This module is only ever loaded through a dynamic import in GameCanvas, so Phaser never runs on the server
@@ -70,5 +76,8 @@ export async function createGame(container: HTMLElement, options: GameOptions): 
     },
     fillFloor: (style) => scene?.fillFloor(style),
     captureThumbnail: () => scene?.captureThumbnail() ?? Promise.resolve(null),
+    zoomBy: (direction) => scene?.zoomBy(direction),
+    walkToPerson: (userId) => scene?.walkToPerson(userId),
+    setMyAvatar: (url) => scene?.setMyAvatar(url),
   };
 }

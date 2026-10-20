@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { wallFaces, type CustomMap } from "@repo/protocol/rules";
+import { customMapBlocked, wallFaces, type CustomMap } from "@repo/protocol/rules";
 import { BUILDER_FOLDER, type Builder, type PaintTool } from "@/lib/builder";
 import { TILE } from "./entities/Avatar";
 
@@ -16,6 +16,12 @@ export function loadBuilder(load: Phaser.Loader.LoaderPlugin) {
     }
   });
 }
+
+const copyMap = (map: CustomMap): CustomMap => ({
+  floor: [...map.floor],
+  walls: [...map.walls],
+  spawn: map.spawn ? { ...map.spawn } : null,
+});
 
 // Neighbour bits for the wall-top lookup, in builder.json's order
 const NEIGHBOURS: [number, number, number][] = [
@@ -48,7 +54,7 @@ export class CustomMapView {
     map: CustomMap
   ) {
     this.builder = scene.cache.json.get(BUILDER_KEY) as Builder;
-    this.map = { floor: [...map.floor], walls: [...map.walls] };
+    this.map = copyMap(map);
 
     const { basechip, wallup } = this.builder.tilesets;
     const tilemap = scene.make.tilemap({ tileWidth: TILE, tileHeight: TILE, width, height });
@@ -64,7 +70,12 @@ export class CustomMapView {
 
   /** A copy of the current layout, e.g. to save it. */
   get current(): CustomMap {
-    return { floor: [...this.map.floor], walls: [...this.map.walls] };
+    return copyMap(this.map);
+  }
+
+  /** Where people appear when they enter, or null for the middle of the map. */
+  get spawn() {
+    return this.map.spawn ?? null;
   }
 
   /** The layers, bottom first, e.g. to draw them into a thumbnail. */
@@ -74,7 +85,7 @@ export class CustomMapView {
 
   /** Replaces the whole layout (someone saved it from the editor). */
   setMap(map: CustomMap) {
-    this.map = { floor: [...map.floor], walls: [...map.walls] };
+    this.map = copyMap(map);
     this.redraw();
   }
 
@@ -82,8 +93,14 @@ export class CustomMapView {
   paint(x: number, y: number, tool: PaintTool) {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return false;
     const i = y * this.width + x;
-    const { floor, walls } = this.map;
+    const { floor, walls, spawn } = this.map;
     let changed = false;
+    if (tool.kind === "spawn") {
+      // Only somewhere people can stand
+      if ((spawn?.x === x && spawn.y === y) || customMapBlocked(this.map, this.width, this.height).has(i)) return false;
+      this.map.spawn = { x, y };
+      return true;
+    }
     if (tool.kind === "floor" && floor[i] !== tool.style) {
       floor[i] = tool.style;
       changed = true;

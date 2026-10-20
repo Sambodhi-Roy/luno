@@ -19,7 +19,7 @@ export function SpaceSettingsDialog({
   onClose,
   onChanged,
 }: {
-  space: OwnedSpaceSummary;
+  space: Pick<OwnedSpaceSummary, "id" | "name" | "visibility" | "inviteCode">;
   onClose: () => void;
   onChanged: (changes: SpaceChanges) => void;
 }) {

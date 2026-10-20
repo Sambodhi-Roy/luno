@@ -7,6 +7,7 @@ import {
 } from "../types/index.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import { notifyUser } from "../lib/realtime.js";
 
 const getJWTSecret = () => {
   const secret = process.env.JWT_SECRET;
@@ -249,6 +250,8 @@ export const updateUserMetadata = async (req: Request, res: Response) => {
       where: { id: userId },
       data: { avatarId },
     });
+    // If they're in a space right now, everyone there sees the new character straight away
+    notifyUser(userId, { type: "user-updated", payload: { avatarUrl: avatar.imageUrl } });
 
     return res.status(200).json({
       message: "User metadata updated successfully",
