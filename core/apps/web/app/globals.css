@@ -98,6 +98,10 @@
   --game-label-supersample: 4;
   /* Ellipse under the local player's feet */
   --game-self-marker-opacity: 0.45;
+  /* Fill of the tile a click is walking to */
+  --game-destination-opacity: 0.25;
+  /* Custom map editor: fill of the spawn point tile */
+  --game-spawn-opacity: 0.3;
 }
 
 @layer base {

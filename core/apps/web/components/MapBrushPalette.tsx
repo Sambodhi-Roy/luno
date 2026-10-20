@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Eraser, PaintBucket, Paintbrush, RefreshCw } from "lucide-react";
+import { ChevronDown, Eraser, MapPin, PaintBucket, Paintbrush, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { stylePreviewUrl, type Builder, type PaintTool } from "@/lib/builder";
 import { Button, Skeleton } from "./ui";
@@ -26,9 +26,8 @@ export function MapBrushPalette({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isSelected = (kind: PaintTool["kind"], style?: number) =>
-    tool?.kind === kind && (kind === "erase" || (tool.kind !== "erase" && tool.style === style));
-  const toggle = (next: PaintTool) =>
-    onSelect(isSelected(next.kind, next.kind === "erase" ? undefined : next.style) ? null : next);
+    tool?.kind === kind && ("style" in tool ? tool.style === style : true);
+  const toggle = (next: PaintTool) => onSelect(isSelected(next.kind, "style" in next ? next.style : undefined) ? null : next);
   // Fill uses the chosen floor, or the first one when a wall or the eraser is chosen
   const fillStyle = tool?.kind === "floor" ? tool.style : (builder?.floors[0]?.id ?? 1);
 
@@ -124,6 +123,16 @@ export function MapBrushPalette({
                 <Eraser className="size-4" />
                 Eraser
                 <span className="ml-auto text-xs font-normal text-copy-lighter">walls first, then floor</span>
+              </button>
+
+              <button
+                onClick={() => toggle({ kind: "spawn" })}
+                aria-pressed={isSelected("spawn")}
+                className="option-tile flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold"
+              >
+                <MapPin className="size-4" />
+                Spawn point
+                <span className="ml-auto text-xs font-normal text-copy-lighter">where people appear</span>
               </button>
             </>
           )}

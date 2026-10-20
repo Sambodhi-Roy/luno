@@ -5,11 +5,26 @@
 /** Time for one tile step. The client animates at this pace; the server rejects faster movement. */
 export const STEP_MS = 180;
 
-/** Minimal slice of a Tiled .tmj map that collision needs. */
+/** Which way a character faces. */
+export type Direction = "up" | "down" | "left" | "right";
+export const DIRECTIONS: readonly Direction[] = ["up", "down", "left", "right"];
+
+/** A tile coordinate. */
+export type Tile = { x: number; y: number };
+
+/** Minimal slice of a Tiled .tmj map that collision and spawning need. */
 export type TiledMap = {
   width: number;
   height: number;
-  layers: { type: string; data?: number[] }[];
+  tilewidth?: number;
+  tileheight?: number;
+  layers: {
+    type: string;
+    name?: string;
+    data?: number[];
+    // Object layers: positions and sizes in pixels
+    objects?: { x: number; y: number; width?: number; height?: number }[];
+  }[];
   tilesets: {
     firstgid: number;
     tiles?: { id: number; properties?: { name: string; value: unknown }[] }[];
@@ -98,8 +113,85 @@ export function buildCollisionGrid(
 }
 
 /** A legal step moves exactly one tile up, down, left or right. */
-export function isSingleStep(from: { x: number; y: number }, to: { x: number; y: number }) {
+export function isSingleStep(from: Tile, to: Tile) {
   return Math.abs(to.x - from.x) + Math.abs(to.y - from.y) === 1;
+}
+
+/** The direction of a single step (or the dominant axis of a longer one), or null for no movement. */
+export function directionOf(from: Tile, to: Tile): Direction | null {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 0 && dy === 0) return null;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "down" : "up";
+}
+
+// Click-to-walk never searches more tiles than this (a 60x60 map has 3600)
+const MAX_PATH_SEARCH = 20_000;
+
+/**
+ * The shortest walk (4-way, one tile per step) from `from` to `to`, not including `from`. When `to` can't be
+ * reached (a wall, furniture, or a closed-off room) it walks to the reachable tile closest to it instead.
+ * Returns an empty path when there's nowhere better to go.
+ */
+export function findPath(grid: CollisionGrid, from: Tile, to: Tile): Tile[] {
+  const { width } = grid;
+  if (!grid.inBounds(from.x, from.y)) return [];
+  const start = from.y * width + from.x;
+  const cameFrom = new Map<number, number>([[start, -1]]);
+  const queue = [start];
+  const distanceToTarget = (i: number) => Math.abs((i % width) - to.x) + Math.abs(Math.floor(i / width) - to.y);
+  let best = start;
+  let bestDistance = distanceToTarget(start);
+
+  for (let head = 0; head < queue.length && head < MAX_PATH_SEARCH; head++) {
+    const i = queue[head]!;
+    const d = distanceToTarget(i);
+    // Breadth-first, so the first tile seen at a given distance is also the closest to walk to
+    if (d < bestDistance) {
+      best = i;
+      bestDistance = d;
+      if (d === 0) break;
+    }
+    const x = i % width;
+    const y = Math.floor(i / width);
+    for (const [nx, ny] of [
+      [x + 1, y],
+      [x - 1, y],
+      [x, y + 1],
+      [x, y - 1],
+    ] as const) {
+      const n = ny * width + nx;
+      if (!grid.isWalkable(nx, ny) || cameFrom.has(n)) continue;
+      cameFrom.set(n, i);
+      queue.push(n);
+    }
+  }
+
+  const path: Tile[] = [];
+  for (let i = best; i !== start; i = cameFrom.get(i)!) path.push({ x: i % width, y: Math.floor(i / width) });
+  return path.reverse();
+}
+
+/**
+ * Spawn tiles marked in a Tiled map: every tile covered by an object in an object layer named "Spawn" (a point
+ * marks one tile, a rectangle every tile it covers).
+ */
+export function tiledSpawnTiles(map: TiledMap): Tile[] {
+  const tw = map.tilewidth ?? 32;
+  const th = map.tileheight ?? 32;
+  const tiles: Tile[] = [];
+  for (const layer of map.layers) {
+    if (layer.type !== "objectgroup" || layer.name?.toLowerCase() !== "spawn") continue;
+    for (const o of layer.objects ?? []) {
+      const x0 = Math.floor(o.x / tw);
+      const y0 = Math.floor(o.y / th);
+      const x1 = o.width ? Math.ceil((o.x + o.width) / tw) - 1 : x0;
+      const y1 = o.height ? Math.ceil((o.y + o.height) / th) - 1 : y0;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) tiles.push({ x, y });
+    }
+  }
+  return tiles;
 }
 
 /* ---------- Custom maps (built in the editor instead of uploaded from Tiled) ---------- */
@@ -113,6 +205,8 @@ export type CustomMap = {
   floor: number[];
   // 0 = no wall; n = wall style n
   walls: number[];
+  // Where people appear when they enter (the middle of the map when unset)
+  spawn?: Tile | null | undefined;
 };
 
 /** Sizes offered when creating a custom map, in tiles (each falls in the web app's matching size label). */

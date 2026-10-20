@@ -2,11 +2,25 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Keyboard, LogIn, RefreshCw, Share2, ShieldX, SearchX, MonitorSmartphone, X, type LucideIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Crown,
+  Footprints,
+  Keyboard,
+  LogIn,
+  MonitorSmartphone,
+  RefreshCw,
+  SearchX,
+  Share2,
+  ShieldX,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import type { ConnectionStatus } from "@/game";
+import type { ConnectionStatus, Person } from "@/game";
 import { inviteUrl, spaceUrl } from "@/lib/navigation";
 import type { SpaceDetail } from "@/lib/types";
+import { AvatarBadge } from "../AvatarSprite";
 import { CopyField } from "../CopyField";
 import { LogoMark } from "../Logo";
 import { VisibilityBadge } from "../VisibilityPicker";
@@ -14,7 +28,17 @@ import { Button, IconButton, Popover } from "../ui";
 
 /* ---------- Top-left: back, space name, connection ---------- */
 
-export function SpaceTitle({ space, status, online }: { space: SpaceDetail; status: ConnectionStatus; online: number }) {
+export function SpaceTitle({
+  space,
+  status,
+  people,
+  onWalkTo,
+}: {
+  space: SpaceDetail;
+  status: ConnectionStatus;
+  people: Person[];
+  onWalkTo: (userId: string) => void;
+}) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <Link href="/dashboard" aria-label="Back to dashboard" title="Back to dashboard" className="hud-button">
@@ -25,24 +49,74 @@ export function SpaceTitle({ space, status, online }: { space: SpaceDetail; stat
         <span className="hidden sm:inline-flex">
           <VisibilityBadge visibility={space.visibility} />
         </span>
-        <StatusPill status={status} online={online} />
+        {status.state === "connected" ? (
+          <PeoplePopover people={people} ownerId={space.creatorId} onWalkTo={onWalkTo} />
+        ) : (
+          <StatusPill status={status} />
+        )}
       </div>
     </div>
   );
 }
 
-function StatusPill({ status, online }: { status: ConnectionStatus; online: number }) {
-  if (status.state === "connected") {
-    return (
-      <span className="badge shrink-0 text-copy" title={`${online} ${online === 1 ? "person" : "people"} here`}>
-        <span className="relative flex size-2">
-          <span className="status-dot-ping bg-success" />
-          <span className="status-dot bg-success" />
-        </span>
-        <span className="tabular-nums">{online}</span> online
-      </span>
-    );
-  }
+/** "N online": opens the list of who's here, where clicking someone walks you over to them. */
+function PeoplePopover({
+  people,
+  ownerId,
+  onWalkTo,
+}: {
+  people: Person[];
+  ownerId: string;
+  onWalkTo: (userId: string) => void;
+}) {
+  const online = people.length;
+  return (
+    <Popover
+      align="left"
+      trigger={(open, toggle) => (
+        <button
+          onClick={toggle}
+          aria-expanded={open}
+          title="See who's here"
+          className="badge shrink-0 text-copy transition-colors hover:bg-hover"
+        >
+          <span className="relative flex size-2">
+            <span className="status-dot-ping bg-success" />
+            <span className="status-dot bg-success" />
+          </span>
+          <span className="tabular-nums">{online}</span> online
+        </button>
+      )}
+    >
+      <p className="font-semibold">
+        In this space <span className="text-copy-lighter tabular-nums">· {online}</span>
+      </p>
+      <ul className="mt-3 max-h-80 space-y-1 overflow-y-auto">
+        {people.map((p) => (
+          <li key={p.userId}>
+            <button
+              onClick={() => !p.isSelf && onWalkTo(p.userId)}
+              disabled={p.isSelf}
+              title={p.isSelf ? undefined : `Walk over to ${p.username}`}
+              className="group flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors enabled:hover:bg-hover"
+            >
+              <AvatarBadge imageUrl={p.avatarUrl} />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.username}</span>
+              {p.userId === ownerId && <Crown className="size-4 shrink-0 text-warning" aria-label="Owner" />}
+              {p.isSelf ? (
+                <span className="badge shrink-0">You</span>
+              ) : (
+                <Footprints className="size-4 shrink-0 text-copy-lighter opacity-0 transition-opacity group-hover:opacity-100" />
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Popover>
+  );
+}
+
+function StatusPill({ status }: { status: ConnectionStatus }) {
   if (status.state === "closed") {
     return (
       <span className="badge shrink-0 text-error">
@@ -141,8 +215,13 @@ export function ControlsCard({ onClose }: { onClose: () => void }) {
       <dl className="space-y-2.5 text-sm">
         <ControlRow keys={<Keys labels={["W", "A", "S", "D"]} />}>Walk</ControlRow>
         <ControlRow keys={<Keys labels={["↑", "←", "↓", "→"]} />}>Or arrows</ControlRow>
+        <ControlRow keys={<Keys labels={["Click"]} />}>Walk to a spot</ControlRow>
+        <ControlRow keys={<Keys labels={["Scroll"]} />}>Zoom</ControlRow>
       </dl>
-      <p className="mt-3 text-xs text-copy-lighter">Walk up to people to hang out. Your name tag is the purple one.</p>
+      <p className="mt-3 text-xs text-copy-lighter">
+        Walk up to people to hang out, or pick someone under &ldquo;online&rdquo; to walk over. Your name tag is the
+        purple one.
+      </p>
     </div>
   );
 }

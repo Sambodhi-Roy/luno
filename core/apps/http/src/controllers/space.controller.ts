@@ -257,7 +257,6 @@ export const updateSpace = async (req: Request, res: Response) => {
       });
     }
 
-    // People already inside a space that turns private stay until they leave; new joins are checked
     const updated = await client.space.update({
       where: { id: spaceId },
       data: {
@@ -266,6 +265,8 @@ export const updateSpace = async (req: Request, res: Response) => {
       },
       select: { id: true, name: true, visibility: true },
     });
+    // People inside see the new name; turning private disconnects anyone who isn't a member
+    notifySpace(spaceId, { type: "space-updated", payload: { name: updated.name, visibility: updated.visibility } });
 
     return res.status(200).json({
       message: "Space updated successfully",
@@ -370,6 +371,7 @@ export const deleteSpace = async (req: Request, res: Response) => {
     await client.space.delete({
       where: { id: spaceId },
     });
+    notifySpace(spaceId, { type: "space-deleted", payload: {} });
 
     return res.status(200).json({
       message: "Space deleted successfully",

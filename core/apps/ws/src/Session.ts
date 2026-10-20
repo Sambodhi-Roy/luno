@@ -1,9 +1,11 @@
 import client from "@repo/db/client";
 import {
   clientMessageSchema,
+  directionOf,
   isSingleStep,
   STEP_MS,
   type ClientMessage,
+  type Direction,
   type RemoteUser,
   type ServerMessage,
 } from "@repo/protocol";
@@ -16,10 +18,10 @@ import type { RoomManager } from "./RoomManager.js";
 const MIN_STEP_INTERVAL_MS = STEP_MS / 2;
 
 // Application close codes (4000-4999 are free for app use)
-const CLOSE_REPLACED = 4000;
-const CLOSE_UNAUTHORIZED = 4001;
-const CLOSE_FORBIDDEN = 4003;
-const CLOSE_NOT_FOUND = 4004;
+export const CLOSE_REPLACED = 4000;
+export const CLOSE_UNAUTHORIZED = 4001;
+export const CLOSE_FORBIDDEN = 4003;
+export const CLOSE_NOT_FOUND = 4004;
 
 type JoiningUser = { username: string; avatarUrl: string | null; canAccess: boolean };
 
@@ -28,6 +30,7 @@ export class Session {
   userId: string | undefined;
   x = 0;
   y = 0;
+  dir: Direction = "down";
   private username = "";
   private avatarUrl: string | null = null;
   private room: Room | undefined;
@@ -60,7 +63,21 @@ export class Session {
       avatarUrl: this.avatarUrl,
       x: this.x,
       y: this.y,
+      dir: this.dir,
     };
+  }
+
+  /** The user picked another avatar: everyone in the room (them included) redraws them. */
+  setAvatar(avatarUrl: string | null) {
+    if (!this.room || avatarUrl === this.avatarUrl) return;
+    this.avatarUrl = avatarUrl;
+    this.room.broadcast({ type: "user-updated", payload: { userId: this.userId!, avatarUrl } });
+  }
+
+  /** Disconnects with an app close code (lost access, space deleted). The close handler does the leaving. */
+  kick(code: number, message: string) {
+    this.send({ type: "error", payload: { message } });
+    this.ws.close(code, message);
   }
 
   private async onMessage(raw: string) {
@@ -78,7 +95,7 @@ export class Session {
 
     const message: ClientMessage = parsed.data;
     if (message.type === "join") return this.join(message.payload.spaceId, message.payload.token);
-    return this.move(message.payload.x, message.payload.y);
+    return this.move(message.payload.x, message.payload.y, message.payload.dir);
   }
 
   private async join(spaceId: string, token: string | undefined) {
@@ -108,14 +125,16 @@ export class Session {
     }
     if (this.ws.readyState !== WebSocket.OPEN) return this.rooms.releaseIfEmpty(room);
 
-    // Same user joining again (another tab): the new session takes over
+    // Same user joining again (another tab): the new session takes over, where the old one stood
     const previous = room.get(userId);
     if (previous) previous.replace();
+    const comingBack = previous ?? this.rooms.recall(spaceId, userId);
 
     this.userId = userId;
     this.username = user.username;
     this.avatarUrl = user.avatarUrl;
-    ({ x: this.x, y: this.y } = room.findSpawn());
+    ({ x: this.x, y: this.y } = room.findSpawn(comingBack));
+    if (comingBack) this.dir = comingBack.dir;
     this.room = room;
     room.add(this);
 
@@ -126,10 +145,17 @@ export class Session {
     room.broadcast({ type: "user-join", payload: this.toRemoteUser() }, this);
   }
 
-  private move(x: number, y: number) {
+  private move(x: number, y: number, dir: Direction | undefined) {
     const room = this.room;
     if (!room) {
       return this.send({ type: "error", payload: { message: "Join a space before moving" } });
+    }
+
+    // Turning on the spot (e.g. bumping into a wall): no step, so no pace limit
+    if (x === this.x && y === this.y && dir) {
+      if (dir === this.dir) return;
+      this.dir = dir;
+      return room.broadcast({ type: "movement", payload: { userId: this.userId!, x, y, dir } }, this);
     }
 
     const now = Date.now();
@@ -140,10 +166,11 @@ export class Session {
       return this.send({ type: "movement-rejected", payload: { x: this.x, y: this.y } });
     }
 
+    this.dir = dir ?? directionOf(this, { x, y }) ?? this.dir;
     this.x = x;
     this.y = y;
     this.lastStepAt = now;
-    room.broadcast({ type: "movement", payload: { userId: this.userId!, x, y } }, this);
+    room.broadcast({ type: "movement", payload: { userId: this.userId!, x, y, dir: this.dir } }, this);
   }
 
   /** Called when the same user joins from elsewhere: drop this connection without announcing a leave. */
@@ -166,6 +193,8 @@ export class Session {
     // A replaced session is no longer in the room, so its leave isn't announced
     if (room.remove(this)) {
       room.broadcast({ type: "user-left", payload: { userId: this.userId! } });
+      // Coming back soon (a reload, a dropped connection) puts them back here
+      this.rooms.remember(room.spaceId, this.userId!, { x: this.x, y: this.y, dir: this.dir });
     }
     this.rooms.releaseIfEmpty(room);
   }

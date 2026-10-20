@@ -86,7 +86,7 @@ Each space gets a single LiveKit room with `autoSubscribe: false`. Each client s
 - [x] Building moved out of the live space into a dedicated editor (`/space/:id/edit`, from the card's ⋯ menu). It has no avatar or connection, and changes still reach players live.
 - [x] `promote-admin` / `demote-admin` scripts in `@repo/db`, so admins don't depend on self-signup
 
-**Known limitation:** switching a space to Private doesn't remove people who are already inside. It only affects new joins.
+Switching a space to Private disconnects anyone inside who isn't a member (close code 4003), leaving a private space you're in ends the visit, and deleting a space closes it for everyone (4004).
 
 ### Between Phases 3 and 4: UI polish
 A pass to make the app feel like a finished product before the social layer. The look follows Twitch (near-black layered surfaces, `#9146FF` for actions, pill buttons, the card hover that reveals a purple block), and the in-space layout follows Gather and ZEP.
@@ -102,6 +102,15 @@ The first art was LimeZu's free pack, which is non-commercial only, and its 16x3
 - [x] All art is now Pipoya's free 32x32 packs (commercial use allowed, no redistribution), kept in the private `luno-assets` repo and mounted as a submodule at `apps/web/public/assets`
 - [x] Maps: a rebuilt 25x25 Office (same id, so existing spaces keep working) and a 60x60 Village converted from Pipoya's sample map, both with a hidden `Collision` layer
 - [x] 62 avatars (every human Pipoya character, first colour variant) in the 32x32, 3x4 layout, drawn at 1x so characters match the map's pixel size, and 67 furniture and outdoor pieces cropped from the tileset (listed in the assets repo's `elements.json`, which the seed reads)
+
+### Between Phases 3 and 4: Gather/ZEP polish pass
+- [x] Click or tap to walk: shortest path around walls and furniture (`findPath` in `@repo/protocol/rules`), with a marker on the destination. Keys cancel it, and the server still validates every step.
+- [x] Other players glide: steps that arrive while one is animating are queued and played back to back, a little faster when behind
+- [x] Facing is shared: moves carry a direction, and turning on the spot (bumping a wall) is broadcast
+- [x] Spawn points: a `Spawn` object layer in a Tiled map, or the spawn brush in the custom map editor. Coming back within 2 minutes (a reload, a dropped connection, another tab) puts you where you were.
+- [x] People list under "N online", where picking someone walks you over; quiet join/leave toasts; zoom with the wheel or the dock's buttons
+- [x] Live owner changes: rename and visibility (`space-updated`), delete, and access re-checks reach everyone inside; avatar changes swap in place (`user-updated`) instead of reloading the space. The owner has a Settings button in the space.
+- [x] Office (inside the entrance door) and Village (the road in front of the big house) have `Spawn` layers
 
 ### Phase 4: Social layer
 - [ ] Text chat, both space-wide and proximity

@@ -15,8 +15,8 @@ export type Builder = {
   wallTop: number[];
 };
 
-/** What painting with the brush does: lay a floor or wall style, or clear the tile. */
-export type PaintTool = { kind: "floor" | "wall"; style: number } | { kind: "erase" };
+/** What painting with the brush does: lay a floor or wall style, clear the tile, or move the spawn point. */
+export type PaintTool = { kind: "floor" | "wall"; style: number } | { kind: "erase" } | { kind: "spawn" };
 
 /** Preview image of a floor or wall style, for the editor's palette. */
 export const stylePreviewUrl = (kind: "floor" | "wall", id: number) => `${BUILDER_FOLDER}previews/${kind}-${id}.png`;

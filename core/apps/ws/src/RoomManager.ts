@@ -1,7 +1,13 @@
 import client from "@repo/db/client";
-import type { CustomMap, InternalEvent, PlacedElement } from "@repo/protocol";
+import type { CustomMap, Direction, InternalEvent, InternalUserEvent, PlacedElement, Tile } from "@repo/protocol";
 import { loadTiledMap } from "./assets.js";
 import { Room } from "./Room.js";
+import { CLOSE_FORBIDDEN, CLOSE_NOT_FOUND } from "./Session.js";
+
+// Someone who comes back to a space within this long (a reload, a dropped connection) reappears where they left
+const RESUME_MS = 2 * 60_000;
+
+type LastSpot = Tile & { dir: Direction; at: number };
 
 type SpaceRow = {
   width: number;
@@ -16,6 +22,8 @@ export class RoomManager {
   private readonly rooms = new Map<string, Room>();
   // Concurrent joins to a space that isn't loaded yet share one load
   private readonly loading = new Map<string, Promise<Room | null>>();
+  // Where people last stood, keyed by "spaceId:userId", kept for RESUME_MS after they leave
+  private readonly lastSpots = new Map<string, LastSpot>();
 
   /** Returns the live room for a space, or null if the space doesn't exist. */
   async get(spaceId: string): Promise<Room | null> {
@@ -39,18 +47,78 @@ export class RoomManager {
     if (room.isEmpty && this.isLive(room)) this.rooms.delete(room.spaceId);
   }
 
+  remember(spaceId: string, userId: string, spot: Tile & { dir: Direction }) {
+    const now = Date.now();
+    // Forget stale spots now and then, so the map can't grow without bound
+    if (this.lastSpots.size > 1000) {
+      for (const [key, s] of this.lastSpots) if (now - s.at > RESUME_MS) this.lastSpots.delete(key);
+    }
+    this.lastSpots.set(`${spaceId}:${userId}`, { ...spot, at: now });
+  }
+
+  /** Where this user stood when they last left the space, if that was recently. */
+  recall(spaceId: string, userId: string): (Tile & { dir: Direction }) | null {
+    const key = `${spaceId}:${userId}`;
+    const spot = this.lastSpots.get(key);
+    this.lastSpots.delete(key);
+    return spot && Date.now() - spot.at <= RESUME_MS ? spot : null;
+  }
+
   /**
-   * Applies a furniture or custom map change reported by apps/http. Spaces nobody is in are skipped: the next join loads
-   * fresh data from the database. A load already in flight may or may not include the change, so wait for it
-   * and apply anyway (adds are idempotent by id).
+   * Applies a change reported by apps/http. Spaces nobody is in are skipped: the next join loads fresh data
+   * from the database. A load already in flight may or may not include the change, so wait for it and apply
+   * anyway (adds are idempotent by id).
    */
   async applyEvent(spaceId: string, event: InternalEvent) {
     const room = this.rooms.get(spaceId) ?? (await this.loading.get(spaceId));
     if (!room) return;
 
-    if (event.type === "element-added") room.addElement(event.payload);
-    else if (event.type === "element-removed") room.removeElement(event.payload.id);
-    else room.setCustomMap(event.payload);
+    switch (event.type) {
+      case "element-added":
+        return room.addElement(event.payload);
+      case "element-removed":
+        return room.removeElement(event.payload.id);
+      case "map-updated":
+        return room.setCustomMap(event.payload);
+      case "space-updated":
+        room.setInfo(event.payload.name, event.payload.visibility);
+        // Going private shuts out anyone who was only there because it was public
+        if (event.payload.visibility === "Private") await this.recheckAccess(room);
+        return;
+      case "space-deleted":
+        return room.closeAll(CLOSE_NOT_FOUND, "This space was deleted");
+      case "access-changed":
+        return this.recheckAccess(room, event.payload.userId);
+    }
+  }
+
+  /** Applies a change to one user, in whichever room they're in. */
+  applyUserEvent(userId: string, event: InternalUserEvent) {
+    for (const room of this.rooms.values()) {
+      if (event.type === "user-updated") room.get(userId)?.setAvatar(event.payload.avatarUrl);
+    }
+  }
+
+  /**
+   * Disconnects people in the room who may no longer enter it (same rule as joining: the owner, anyone when
+   * it's public, or a member). One round trip for the whole room.
+   */
+  private async recheckAccess(room: Room, onlyUserId?: string) {
+    const sessions = room.sessionList.filter((s) => !onlyUserId || s.userId === onlyUserId);
+    const userIds = sessions.map((s) => s.userId!);
+    if (userIds.length === 0) return;
+
+    const rows = await client.$queryRaw<{ userId: string }[]>`
+      SELECT u.id AS "userId"
+      FROM "User" u, "Space" s
+      WHERE s.id = ${room.spaceId}
+        AND u.id = ANY(${userIds})
+        AND (s."creatorId" = u.id OR s.visibility = 'Public'
+          OR EXISTS (SELECT 1 FROM "SpaceMember" m WHERE m."spaceId" = s.id AND m."userId" = u.id))`;
+    const allowed = new Set(rows.map((r) => r.userId));
+    for (const session of sessions) {
+      if (!allowed.has(session.userId!)) session.kick(CLOSE_FORBIDDEN, "You no longer have access to this space");
+    }
   }
 
   private async load(spaceId: string): Promise<Room | null> {

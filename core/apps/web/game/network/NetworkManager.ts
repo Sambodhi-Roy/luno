@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, ServerMessageType } from "@repo/protocol";
+import type { ClientMessage, Direction, ServerMessage, ServerMessageType } from "@repo/protocol";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3002";
 
@@ -72,8 +72,9 @@ export class NetworkManager {
     };
   }
 
-  sendMove(x: number, y: number) {
-    this.send({ type: "movement", payload: { x, y } });
+  /** A step to an adjacent tile, or a turn on the spot (the current tile with a new direction). */
+  sendMove(x: number, y: number, dir: Direction) {
+    this.send({ type: "movement", payload: { x, y, dir } });
   }
 
   close() {

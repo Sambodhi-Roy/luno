@@ -1,8 +1,19 @@
 // WebSocket contract for core/apps/ws (needs it running on :3002 alongside the API).
 const WebSocket = require("ws");
 const { createAdmin, createUser } = require("../_helpers/auth.helper");
-const { createSpace, addElement, removeElement, getSpace, acceptInvite } = require("../_helpers/space.helper");
-const { createElement } = require("../_helpers/admin.helper");
+const {
+  createSpace,
+  addElement,
+  removeElement,
+  getSpace,
+  acceptInvite,
+  updateSpace,
+  deleteSpace,
+  createCustomSpace,
+  saveCustomMap,
+} = require("../_helpers/space.helper");
+const { createElement, createAvatar } = require("../_helpers/admin.helper");
+const { updateMetadata } = require("../_helpers/user.helper");
 const { waitForMessage } = require("../_helpers/ws.helper");
 
 const WS_URL = "ws://localhost:3002";
@@ -25,6 +36,14 @@ function send(ws, type, payload) {
 
 function waitForClose(ws) {
   return new Promise((resolve) => ws.on("close", (code) => resolve(code)));
+}
+
+// Skips messages until one of the given type arrives
+async function waitForType(messages, type) {
+  for (;;) {
+    const msg = await waitForMessage(messages);
+    if (msg.type === type) return msg;
+  }
 }
 
 describe("Websocket integration", () => {
@@ -301,5 +320,107 @@ describe("Live furniture updates", () => {
       body: JSON.stringify({ type: "element-removed", payload: { id: "x" } }),
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("Facing, spawning and live space changes", () => {
+  let owner, visitor;
+  const sockets = [];
+
+  async function joined(token, spaceId) {
+    const messages = [];
+    const ws = await connect(messages);
+    sockets.push(ws);
+    send(ws, "join", { spaceId, token });
+    const msg = await waitForType(messages, "space-joined");
+    return { ws, messages, spawn: msg.payload.spawn };
+  }
+
+  // A public 10x10 space with the visitor in the middle (5, 5) and the owner watching
+  async function room() {
+    const space = await createSpace(owner.token, "WS Live", "10x10", undefined, "Public");
+    const spaceId = space.data.spaceId;
+    const v = await joined(visitor.token, spaceId);
+    const o = await joined(owner.token, spaceId);
+    await waitForType(v.messages, "user-join");
+    return { spaceId, v, o };
+  }
+
+  beforeAll(async () => {
+    owner = await createUser();
+    visitor = await createAdmin();
+  });
+
+  afterAll(() => sockets.forEach((ws) => ws.close()));
+
+  test("Steps carry the direction, and turning on the spot is broadcast without a step", async () => {
+    const { v, o } = await room();
+    expect(v.spawn).toEqual({ x: 5, y: 5 });
+
+    send(v.ws, "movement", { x: 5, y: 5, dir: "left" });
+    const turned = await waitForType(o.messages, "movement");
+    expect(turned.payload).toEqual({ userId: visitor.userId, x: 5, y: 5, dir: "left" });
+
+    // No direction given: worked out from the step
+    send(v.ws, "movement", { x: 5, y: 6 });
+    const stepped = await waitForType(o.messages, "movement");
+    expect(stepped.payload).toMatchObject({ x: 5, y: 6, dir: "down" });
+  });
+
+  test("Coming back soon after leaving puts you where you were", async () => {
+    const { spaceId, v, o } = await room();
+    send(v.ws, "movement", { x: 6, y: 5 });
+    await waitForType(o.messages, "movement");
+
+    v.ws.close();
+    await waitForType(o.messages, "user-left");
+
+    const back = await joined(visitor.token, spaceId);
+    expect(back.spawn).toEqual({ x: 6, y: 5 });
+  });
+
+  test("A custom map's spawn point is where people appear", async () => {
+    const space = await createCustomSpace(owner.token, "WS Spawn", "small", "Public");
+    const spaceId = space.data.spaceId;
+    const { customMap } = (await getSpace(owner.token, spaceId)).data;
+    expect((await saveCustomMap(owner.token, spaceId, { ...customMap, spawn: { x: 3, y: 4 } })).status).toBe(200);
+
+    const v = await joined(visitor.token, spaceId);
+    expect(v.spawn).toEqual({ x: 3, y: 4 });
+
+    const outside = await saveCustomMap(owner.token, spaceId, { ...customMap, spawn: { x: 99, y: 4 } });
+    expect(outside.status).toBe(400);
+  });
+
+  test("Changing avatar is pushed to everyone in the space, you included", async () => {
+    const { v, o } = await room();
+    const avatar = await createAvatar(visitor.token, "WS Avatar", "https://example.com/ws-avatar.png");
+    expect((await updateMetadata(visitor.token, avatar.data.avatarId)).status).toBe(200);
+
+    for (const client of [v, o]) {
+      const msg = await waitForType(client.messages, "user-updated");
+      expect(msg.payload).toEqual({ userId: visitor.userId, avatarUrl: "https://example.com/ws-avatar.png" });
+    }
+  });
+
+  test("Renaming is pushed live, and going private disconnects people who aren't members", async () => {
+    const { spaceId, v, o } = await room();
+    const visitorClosed = waitForClose(v.ws);
+
+    expect((await updateSpace(owner.token, spaceId, { name: "WS Renamed", visibility: "Private" })).status).toBe(200);
+
+    const renamed = await waitForType(o.messages, "space-updated");
+    expect(renamed.payload).toEqual({ name: "WS Renamed", visibility: "Private" });
+    expect(await visitorClosed).toBe(4003);
+    // The owner stays and sees the visitor go
+    expect((await waitForType(o.messages, "user-left")).payload.userId).toBe(visitor.userId);
+  });
+
+  test("Deleting a space disconnects everyone in it", async () => {
+    const { spaceId, v, o } = await room();
+    const closed = [waitForClose(v.ws), waitForClose(o.ws)];
+
+    expect((await deleteSpace(owner.token, spaceId)).status).toBe(200);
+    expect(await Promise.all(closed)).toEqual([4004, 4004]);
   });
 });
