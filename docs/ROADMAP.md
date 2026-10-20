@@ -130,6 +130,8 @@ The first art was LimeZu's free pack, which is non-commercial only, and its 16x3
 ### Phase 6: Customisable maps and interactive objects
 - [x] Custom maps: "Custom map" when creating a space opens the editor on a walled room (small 20x15, medium 32x24 or large 48x36). The owner paints floors, draws walls (their tops and fronts are drawn automatically, and they block movement), and places furniture. Saves go live to everyone in the space, and the dashboard cover is rendered from the map.
 - [x] Usernames are case-insensitive (`citext`), so "Sam" and "sam" can no longer be two different accounts
+- [x] Seven more themed premade maps to pick from when creating a space: Café, Park, Library, Castle hall, Island dock, Market square and Farmstead. Each has a spawn area and a few movable default pieces.
+- [x] Bigger Park, Farmstead, Island dock, Market square and Castle hall (a waterfall cliff, a hedge maze, a stream and stable, islets with bridges, a canal and a second shop row, a courtyard and moat). Water and waterfalls ripple with Pipoya's animation frames, in Village too, and doors swing open as people walk up to them.
 - [ ] Custom maps: undo for painting, more styles (outdoor terrain, water), and resizing a map after it's created
 - [ ] Users can upload their own Tiled maps (admins can already)
 - [ ] Portals (teleport or change space), embedded iframes, whiteboards, and YouTube on "press X"
