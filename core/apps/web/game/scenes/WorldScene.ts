@@ -13,6 +13,7 @@ import type { Element, Me, SpaceDetail } from "@/lib/types";
 import type { PaintTool } from "@/lib/builder";
 import { animateTiles } from "../animatedTiles";
 import { CustomMapView, loadBuilder } from "../customMap";
+import { Doors } from "../doors";
 import { animKey, Avatar, TILE } from "../entities/Avatar";
 import { LocalPlayer } from "../entities/LocalPlayer";
 import { NetworkManager, type ConnectionStatus } from "../network/NetworkManager";
@@ -99,6 +100,8 @@ export class WorldScene extends Phaser.Scene {
   private grid!: CollisionGrid;
   private network: NetworkManager | null = null;
   private player: LocalPlayer | null = null;
+  // Doors marked in the Tiled map, which swing open as people come near (play mode)
+  private doors: Doors | null = null;
   private readonly remotes = new Map<string, Avatar>();
   // Players whose character sheet is still loading, kept up to date until their Avatar can be drawn
   private readonly pendingRemotes = new Map<string, RemoteUser>();
@@ -190,6 +193,7 @@ export class WorldScene extends Phaser.Scene {
       const tiledData = this.cache.tilemap.get("map").data;
       this.tiledMap = tiledData as TiledMap;
       animateTiles(this, map, tiledData);
+      this.doors = new Doors(this, map, tiledData);
       this.setUpCamera(map.widthInPixels, map.heightInPixels);
     } else if (space.customMap) {
       this.customView = new CustomMapView(this, this.spaceWidth, this.spaceHeight, space.customMap);
@@ -226,6 +230,7 @@ export class WorldScene extends Phaser.Scene {
 
   update(_time: number, delta: number) {
     this.player?.update();
+    if (this.doors && this.player) this.doors.update([this.player, ...this.remotes.values()]);
     this.buildTool?.update();
     this.updatePaintCursor();
     this.panWithKeys(delta);
