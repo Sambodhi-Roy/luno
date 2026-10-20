@@ -11,6 +11,7 @@ import { DEFAULT_AVATAR_URL } from "@/lib/avatars";
 import { bodyFont, cssVar, themeColor } from "@/lib/theme";
 import type { Element, Me, SpaceDetail } from "@/lib/types";
 import type { PaintTool } from "@/lib/builder";
+import { animateTiles } from "../animatedTiles";
 import { CustomMapView, loadBuilder } from "../customMap";
 import { animKey, Avatar, TILE } from "../entities/Avatar";
 import { LocalPlayer } from "../entities/LocalPlayer";
@@ -186,7 +187,9 @@ export class WorldScene extends Phaser.Scene {
         // The "Collision" layer only marks blocked tiles; it isn't meant to be seen
         if (layer && layerData.name === "Collision") layer.setVisible(false);
       }
-      this.tiledMap = this.cache.tilemap.get("map").data as TiledMap;
+      const tiledData = this.cache.tilemap.get("map").data;
+      this.tiledMap = tiledData as TiledMap;
+      animateTiles(this, map, tiledData);
       this.setUpCamera(map.widthInPixels, map.heightInPixels);
     } else if (space.customMap) {
       this.customView = new CustomMapView(this, this.spaceWidth, this.spaceHeight, space.customMap);
