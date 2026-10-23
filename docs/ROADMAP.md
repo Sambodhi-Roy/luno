@@ -113,7 +113,7 @@ The first art was LimeZu's free pack, which is non-commercial only, and its 16x3
 - [x] Office (inside the entrance door) and Village (the road in front of the big house) have `Spawn` layers
 
 ### Phase 4: Social layer
-- [ ] Text chat, both space-wide and proximity
+- [x] Text chat, both space-wide and proximity: a chat panel with Nearby (people within 5 tiles, sent only to them and never saved) and Everyone tabs, speech bubbles over avatars, an unread count, Enter to type, and a rate limit. Everyone messages are saved for 30 days (at most 500 per space, pruned hourly by `apps/ws`), the latest 50 come with `space-joined`, and older ones load a page at a time from `GET /space/:id/messages`.
 - [ ] Online-users sidebar, emotes and reactions, follow a user
 - [x] Invite links, with an optional private-space flag (done early, see above)
 - [x] Avatar sprite sheets per `Avatar`, replacing the hardcoded "adam" (done in the UI polish pass; every sheet shares one layout, now Pipoya's 32x32 3x4)

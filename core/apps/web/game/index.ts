@@ -1,4 +1,5 @@
 import * as Phaser from "phaser";
+import type { ChatScope } from "@repo/protocol";
 import type { Element } from "@/lib/types";
 import { themeColor } from "@/lib/theme";
 import type { PaintTool } from "@/lib/builder";
@@ -26,6 +27,8 @@ export type GameController = {
   walkToPerson: (userId: string) => void;
   // Play mode: we picked another avatar
   setMyAvatar: (url: string | null) => void;
+  // Play mode: sends a chat message; false if not connected
+  sendChat: (text: string, scope: ChatScope) => boolean;
 };
 
 // This module is only ever loaded through a dynamic import in GameCanvas, so Phaser never runs on the server
@@ -79,5 +82,6 @@ export async function createGame(container: HTMLElement, options: GameOptions): 
     zoomBy: (direction) => scene?.zoomBy(direction),
     walkToPerson: (userId) => scene?.walkToPerson(userId),
     setMyAvatar: (url) => scene?.setMyAvatar(url),
+    sendChat: (text, scope) => scene?.sendChat(text, scope) ?? false,
   };
 }

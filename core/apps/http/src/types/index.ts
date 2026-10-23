@@ -97,3 +97,9 @@ export const tiledMapSchema = z.object({
   layers: z.array(z.object({ type: z.string() })).min(1),
   tilesets: z.array(z.object({ firstgid: z.number().int(), image: z.string().min(1) })).min(1),
 });
+
+// GET /space/:spaceId/messages: a page of space-wide chat, older than `before` when given
+export const chatHistoryQuerySchema = z.object({
+  before: z.iso.datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});

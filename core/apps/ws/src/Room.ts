@@ -1,5 +1,7 @@
 import {
   buildCollisionGrid,
+  isWithinChatRadius,
+  type ChatEntry,
   type CollisionGrid,
   type CustomMap,
   type PlacedElement,
@@ -13,6 +15,9 @@ import {
   tiledSpawnTiles,
 } from "@repo/protocol";
 import type { Session } from "./Session.js";
+
+// Space-wide chat messages kept in memory for people who join
+export const RECENT_CHAT = 50;
 
 /** Everyone currently connected to one space, plus that space's furniture and walkability grid. */
 export class Room {
@@ -31,7 +36,9 @@ export class Room {
     private readonly tiledMap: TiledMap | null,
     elements: (PlacedElement & { id: string })[],
     // Floors and walls of a map built in the editor, instead of a Tiled map
-    private customMap: CustomMap | null = null
+    private customMap: CustomMap | null = null,
+    // The latest space-wide chat messages, oldest first
+    private readonly chat: ChatEntry[] = []
   ) {
     this.elements = new Map(elements.map(({ id, ...placed }) => [id, placed]));
     this._grid = this.buildGrid();
@@ -66,6 +73,25 @@ export class Room {
   /** The owner renamed the space or changed its visibility. */
   setInfo(name: string, visibility: Visibility) {
     this.broadcast({ type: "space-updated", payload: { name, visibility } });
+  }
+
+  /** The latest space-wide chat, oldest first, for people joining. */
+  get recentChat() {
+    return [...this.chat];
+  }
+
+  /** A space-wide chat message (already saved): remember it for people who join later and tell everyone. */
+  addChat(entry: ChatEntry) {
+    this.chat.push(entry);
+    if (this.chat.length > RECENT_CHAT) this.chat.splice(0, this.chat.length - RECENT_CHAT);
+    this.broadcast({ type: "chat", payload: entry });
+  }
+
+  /** Sends to everyone within chat range of `from`, `from` included. */
+  broadcastNear(from: Session, message: ServerMessage) {
+    for (const session of this.sessions.values()) {
+      if (isWithinChatRadius(from, session)) session.send(message);
+    }
   }
 
   /** Disconnects everyone (e.g. the space was deleted). Their sockets' close handlers do the leaving. */

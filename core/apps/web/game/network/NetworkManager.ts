@@ -1,4 +1,4 @@
-import type { ClientMessage, Direction, ServerMessage, ServerMessageType } from "@repo/protocol";
+import type { ChatScope, ClientMessage, Direction, ServerMessage, ServerMessageType } from "@repo/protocol";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3002";
 
@@ -77,6 +77,11 @@ export class NetworkManager {
     this.send({ type: "movement", payload: { x, y, dir } });
   }
 
+  /** A chat message to the people nearby or everyone in the space. False if we're not connected. */
+  sendChat(text: string, scope: ChatScope) {
+    return this.send({ type: "chat", payload: { text, scope } });
+  }
+
   close() {
     this.stopped = true;
     clearTimeout(this.retryTimer);
@@ -84,6 +89,8 @@ export class NetworkManager {
   }
 
   private send(message: ClientMessage) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message));
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(message));
+    return true;
   }
 }

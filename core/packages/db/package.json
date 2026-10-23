@@ -16,7 +16,8 @@
     "postinstall": "prisma generate",
     "promote-admin": "tsx scripts/set-role.ts Admin",
     "demote-admin": "tsx scripts/set-role.ts User",
-    "cleanup-test-data": "tsx scripts/cleanup-test-data.ts"
+    "cleanup-test-data": "tsx scripts/cleanup-test-data.ts",
+    "prune-chat": "tsx scripts/prune-chat.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

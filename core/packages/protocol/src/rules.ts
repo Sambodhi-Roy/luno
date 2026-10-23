@@ -117,6 +117,17 @@ export function isSingleStep(from: Tile, to: Tile) {
   return Math.abs(to.x - from.x) + Math.abs(to.y - from.y) === 1;
 }
 
+/* ---------- Chat ---------- */
+
+// Nearby chat reaches everyone within this many tiles (in any direction, diagonals included)
+export const CHAT_RADIUS = 5;
+export const CHAT_MAX_LENGTH = 300;
+
+/** Whether someone at `b` hears nearby chat sent from `a`. */
+export function isWithinChatRadius(a: Tile, b: Tile) {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= CHAT_RADIUS;
+}
+
 /** The direction of a single step (or the dominant axis of a longer one), or null for no movement. */
 export function directionOf(from: Tile, to: Tile): Direction | null {
   const dx = to.x - from.x;

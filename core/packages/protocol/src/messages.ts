@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DIRECTIONS, MAX_CUSTOM_STYLE, type CustomMap, type Direction } from "./rules.js";
+import { CHAT_MAX_LENGTH, DIRECTIONS, MAX_CUSTOM_STYLE, type CustomMap, type Direction } from "./rules.js";
 
 // Wire format between the browser and apps/ws: JSON `{ type, payload }`.
 // All positions are tile coordinates.
@@ -28,7 +28,23 @@ export const moveMessageSchema = z.object({
   }),
 });
 
-export const clientMessageSchema = z.discriminatedUnion("type", [joinMessageSchema, moveMessageSchema]);
+export const CHAT_SCOPES = ["nearby", "space"] as const;
+// nearby: people within CHAT_RADIUS tiles, never stored. space: everyone in the space, kept for a while.
+export type ChatScope = (typeof CHAT_SCOPES)[number];
+
+export const chatMessageSchema = z.object({
+  type: z.literal("chat"),
+  payload: z.object({
+    text: z.string().trim().min(1).max(CHAT_MAX_LENGTH),
+    scope: z.enum(CHAT_SCOPES),
+  }),
+});
+
+export const clientMessageSchema = z.discriminatedUnion("type", [
+  joinMessageSchema,
+  moveMessageSchema,
+  chatMessageSchema,
+]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
@@ -98,9 +114,21 @@ export type RemoteUser = Position & {
   dir: Direction;
 };
 
+/** One chat message, as delivered to clients (and returned by GET /space/:id/messages). */
+export type ChatEntry = {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  scope: ChatScope;
+  // ISO timestamp
+  at: string;
+};
+
 export type ServerMessage =
-  // Sent to the joiner: where they spawn and who is already in the space (not including themselves)
-  | { type: "space-joined"; payload: { spawn: Position; users: RemoteUser[] } }
+  // Sent to the joiner: where they spawn, who is already in the space (not including themselves) and the
+  // latest space-wide chat, oldest first. Nearby chat said before you arrived is never replayed.
+  | { type: "space-joined"; payload: { spawn: Position; users: RemoteUser[]; chat: ChatEntry[] } }
   | { type: "user-join"; payload: RemoteUser }
   // A step or a turn on the spot
   | { type: "movement"; payload: Position & { userId: string; dir: Direction } }
@@ -116,6 +144,10 @@ export type ServerMessage =
   | { type: "user-updated"; payload: { userId: string; avatarUrl: string | null } }
   // The owner renamed the space or changed its visibility
   | { type: "space-updated"; payload: { name: string; visibility: Visibility } }
+  // A chat message you can hear (your own included)
+  | { type: "chat"; payload: ChatEntry }
+  // Sent to the sender only: their chat message wasn't delivered (e.g. sending too fast)
+  | { type: "chat-rejected"; payload: { message: string } }
   | { type: "error"; payload: { message: string } };
 
 export type ServerMessageType = ServerMessage["type"];

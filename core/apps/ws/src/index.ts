@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createServer } from "node:http";
-import client from "@repo/db/client";
+import client, { pruneChatMessages } from "@repo/db/client";
 import { WebSocketServer, type WebSocket } from "ws";
 import { tokenFromCookieHeader } from "./auth.js";
 import { handleInternalRequest } from "./internal.js";
@@ -12,6 +12,8 @@ const PORT = Number(process.env.PORT ?? 3002);
 const MAX_PAYLOAD_BYTES = 4 * 1024;
 // Connections that stop answering pings (closed laptop, dropped network) are cleaned up
 const HEARTBEAT_MS = 30_000;
+// Old space-wide chat is deleted this often (pruneChatMessages has the limits)
+const CHAT_PRUNE_MS = 60 * 60_000;
 
 const rooms = new RoomManager();
 
@@ -42,9 +44,18 @@ const heartbeat = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-wss.on("close", () => clearInterval(heartbeat));
+function pruneChat() {
+  pruneChatMessages(client).catch((e) => console.error("ws: pruning chat failed", e));
+}
+const chatPrune = setInterval(pruneChat, CHAT_PRUNE_MS);
+
+wss.on("close", () => {
+  clearInterval(heartbeat);
+  clearInterval(chatPrune);
+});
 server.listen(PORT, () => {
   console.log(`WebSocket server running on port ${PORT}`);
   // Open a database connection now, so the first player to join doesn't wait for the handshake
   client.$queryRaw`SELECT 1`.catch((e) => console.error("ws: database warm-up failed", e));
+  pruneChat();
 });
