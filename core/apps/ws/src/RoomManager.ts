@@ -1,7 +1,7 @@
-import client from "@repo/db/client";
-import type { CustomMap, Direction, InternalEvent, InternalUserEvent, PlacedElement, Tile } from "@repo/protocol";
+import client, { CHAT_RETENTION_DAYS } from "@repo/db/client";
+import type { ChatEntry, CustomMap, Direction, InternalEvent, InternalUserEvent, PlacedElement, Tile } from "@repo/protocol";
 import { loadTiledMap } from "./assets.js";
-import { Room } from "./Room.js";
+import { RECENT_CHAT, Room } from "./Room.js";
 import { CLOSE_FORBIDDEN, CLOSE_NOT_FOUND } from "./Session.js";
 
 // Someone who comes back to a space within this long (a reload, a dropped connection) reappears where they left
@@ -15,6 +15,7 @@ type SpaceRow = {
   tmjUrl: string | null;
   customMap: CustomMap | null;
   elements: (PlacedElement & { id: string })[];
+  chat: ChatEntry[];
 };
 
 /** Loads a space into memory on first join and drops it when the last person leaves. */
@@ -130,7 +131,16 @@ export class RoomManager {
           json_agg(json_build_object('id', se.id, 'x', se.x, 'y', se.y, 'width', e.width, 'height', e.height, 'static', e.static))
             FILTER (WHERE se.id IS NOT NULL),
           '[]'
-        ) AS elements
+        ) AS elements,
+        (SELECT COALESCE(json_agg(c ORDER BY c.at), '[]') FROM (
+          SELECT cm.id, cm."userId", u.username, cm.text, 'space' AS scope,
+            to_char(cm."createdAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at
+          FROM "ChatMessage" cm
+          JOIN "User" u ON u.id = cm."userId"
+          WHERE cm."spaceId" = s.id AND cm."createdAt" > now() - make_interval(days => ${CHAT_RETENTION_DAYS})
+          ORDER BY cm."createdAt" DESC
+          LIMIT ${RECENT_CHAT}
+        ) c) AS chat
       FROM "Space" s
       LEFT JOIN "Map" m ON m.id = s."mapId"
       LEFT JOIN "spaceElements" se ON se."spaceId" = s.id
@@ -142,7 +152,7 @@ export class RoomManager {
     if (!space) return null;
 
     const tiledMap = space.tmjUrl ? await loadTiledMap(space.tmjUrl) : null;
-    const room = new Room(spaceId, space.width, space.height, tiledMap, space.elements, space.customMap);
+    const room = new Room(spaceId, space.width, space.height, tiledMap, space.elements, space.customMap, space.chat);
     this.rooms.set(spaceId, room);
     return room;
   }

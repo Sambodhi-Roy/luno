@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
 import client from "@repo/db/client";
 import {
   clientMessageSchema,
   directionOf,
   isSingleStep,
   STEP_MS,
+  type ChatEntry,
+  type ChatScope,
   type ClientMessage,
   type Direction,
   type RemoteUser,
@@ -16,6 +19,9 @@ import type { RoomManager } from "./RoomManager.js";
 
 // Accept steps a bit faster than the client's animation pace, so network jitter doesn't cause rejections
 const MIN_STEP_INTERVAL_MS = STEP_MS / 2;
+// At most CHAT_BURST chat messages in any CHAT_WINDOW_MS
+const CHAT_BURST = 5;
+const CHAT_WINDOW_MS = 5_000;
 
 // Application close codes (4000-4999 are free for app use)
 export const CLOSE_REPLACED = 4000;
@@ -36,6 +42,8 @@ export class Session {
   private room: Room | undefined;
   private joining = false;
   private lastStepAt = 0;
+  // When this session's recent chat messages were sent, oldest first (for the rate limit)
+  private chatTimes: number[] = [];
 
   constructor(
     private readonly ws: WebSocket,
@@ -95,6 +103,7 @@ export class Session {
 
     const message: ClientMessage = parsed.data;
     if (message.type === "join") return this.join(message.payload.spaceId, message.payload.token);
+    if (message.type === "chat") return this.chat(message.payload.text, message.payload.scope);
     return this.move(message.payload.x, message.payload.y, message.payload.dir);
   }
 
@@ -140,7 +149,7 @@ export class Session {
 
     this.send({
       type: "space-joined",
-      payload: { spawn: { x: this.x, y: this.y }, users: room.users(this) },
+      payload: { spawn: { x: this.x, y: this.y }, users: room.users(this), chat: room.recentChat },
     });
     room.broadcast({ type: "user-join", payload: this.toRemoteUser() }, this);
   }
@@ -171,6 +180,39 @@ export class Session {
     this.y = y;
     this.lastStepAt = now;
     room.broadcast({ type: "movement", payload: { userId: this.userId!, x, y, dir: this.dir } }, this);
+  }
+
+  /**
+   * Nearby chat goes to everyone within CHAT_RADIUS tiles and is never stored. Space chat goes to everyone in
+   * the space and is saved first, so it shows up in the history of people who join later.
+   */
+  private async chat(text: string, scope: ChatScope) {
+    const room = this.room;
+    if (!room) {
+      return this.send({ type: "chat-rejected", payload: { message: "Join a space before chatting" } });
+    }
+
+    const now = Date.now();
+    this.chatTimes = this.chatTimes.filter((t) => now - t < CHAT_WINDOW_MS);
+    if (this.chatTimes.length >= CHAT_BURST) {
+      return this.send({ type: "chat-rejected", payload: { message: "You're sending messages too fast" } });
+    }
+    this.chatTimes.push(now);
+
+    const entry: ChatEntry = {
+      id: randomUUID(),
+      userId: this.userId!,
+      username: this.username,
+      text,
+      scope,
+      at: new Date(now).toISOString(),
+    };
+    if (scope === "nearby") return room.broadcastNear(this, { type: "chat", payload: entry });
+
+    await client.$executeRaw`
+      INSERT INTO "ChatMessage" (id, "spaceId", "userId", text, "createdAt")
+      VALUES (${entry.id}, ${room.spaceId}, ${entry.userId}, ${text}, ${new Date(now)})`;
+    room.addChat(entry);
   }
 
   /** Called when the same user joins from elsewhere: drop this connection without announcing a leave. */
