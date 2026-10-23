@@ -2,11 +2,12 @@ import * as Phaser from "phaser";
 import {
   buildCollisionGrid,
   findPath,
+  isWithinChatRadius,
   type CollisionGrid,
   type CustomMap,
   type TiledMap,
 } from "@repo/protocol/rules";
-import type { RemoteUser, SpaceElement, Visibility } from "@repo/protocol";
+import type { ChatEntry, ChatScope, RemoteUser, SpaceElement, Visibility } from "@repo/protocol";
 import { DEFAULT_AVATAR_URL } from "@/lib/avatars";
 import { bodyFont, cssVar, themeColor } from "@/lib/theme";
 import type { Element, Me, SpaceDetail } from "@/lib/types";
@@ -67,6 +68,14 @@ export type PlayModeData = {
   // Someone came in or left after we joined (not those already here, nor someone switching tabs)
   // `here` counts everyone in the space afterwards, you included
   onArrival: (username: string, kind: "joined" | "left", here: number) => void;
+  // The latest space-wide chat, oldest first, sent on every (re)join
+  onChatHistory: (entries: ChatEntry[]) => void;
+  // A chat message we can hear (our own included)
+  onChat: (entry: ChatEntry) => void;
+  // How many other people are within nearby-chat range; called when it changes
+  onNearbyCount: (count: number) => void;
+  // The server didn't deliver our chat message (e.g. sending too fast)
+  onChatRejected: (message: string) => void;
 };
 
 // Editing (the owner's editor page): no avatar or connection, a free camera, and furniture placement
@@ -133,6 +142,8 @@ export class WorldScene extends Phaser.Scene {
   private myAvatarUrl: string | null = null;
   // Playing: the tile a click is walking to
   private destination: Phaser.GameObjects.Rectangle | null = null;
+  // Playing: how many others were within nearby-chat range when last reported
+  private nearbyCount = -1;
 
   constructor() {
     super("WorldScene");
@@ -230,6 +241,7 @@ export class WorldScene extends Phaser.Scene {
 
   update(_time: number, delta: number) {
     this.player?.update();
+    this.reportNearby();
     if (this.doors && this.player) this.doors.update([this.player, ...this.remotes.values()]);
     this.buildTool?.update();
     this.updatePaintCursor();
@@ -282,6 +294,11 @@ export class WorldScene extends Phaser.Scene {
     const end = path.at(-1);
     if (end && end.x === target.tileX && end.y === target.tileY) path.pop();
     this.walk(path);
+  }
+
+  /** Sends a chat message. False if we're not connected. */
+  sendChat(text: string, scope: ChatScope) {
+    return this.network?.sendChat(text, scope) ?? false;
   }
 
   /** Our own avatar changed (the server announces it too; both lead to the same sheet). */
@@ -536,7 +553,7 @@ export class WorldScene extends Phaser.Scene {
     const network = new NetworkManager(this.ctx.space.id, this.ctx.onStatus);
     this.network = network;
     network
-      .on("space-joined", ({ spawn, users }) => {
+      .on("space-joined", ({ spawn, users, chat }) => {
         // Also runs after a reconnect: start from the server's view of the room
         this.clearRemotes();
         users.forEach((u) => this.addRemote(u));
@@ -558,6 +575,16 @@ export class WorldScene extends Phaser.Scene {
           this.cameras.main.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
         }
         this.reportPresence();
+        if (this.ctx.mode === "play") this.ctx.onChatHistory(chat);
+      })
+      .on("chat", (entry) => {
+        if (this.ctx.mode !== "play") return;
+        const speaker = entry.userId === this.ctx.me.id ? this.player : this.remotes.get(entry.userId);
+        speaker?.say(entry.text);
+        this.ctx.onChat(entry);
+      })
+      .on("chat-rejected", ({ message }) => {
+        if (this.ctx.mode === "play") this.ctx.onChatRejected(message);
       })
       .on("user-join", (user) => {
         // A known user re-joining (e.g. from another tab) just moves to their new spot, unless they changed
@@ -644,6 +671,18 @@ export class WorldScene extends Phaser.Scene {
   /** Everyone in the space, us included. */
   private headcount() {
     return this.remotes.size + this.pendingRemotes.size + (this.player ? 1 : 0);
+  }
+
+  /** Tells the page how many others would hear nearby chat, when that changes. */
+  private reportNearby() {
+    if (this.ctx.mode !== "play" || !this.player) return;
+    const me = { x: this.player.tileX, y: this.player.tileY };
+    let count = 0;
+    for (const avatar of this.remotes.values()) if (isWithinChatRadius(me, { x: avatar.tileX, y: avatar.tileY })) count++;
+    for (const user of this.pendingRemotes.values()) if (isWithinChatRadius(me, user)) count++;
+    if (count === this.nearbyCount) return;
+    this.nearbyCount = count;
+    this.ctx.onNearbyCount(count);
   }
 
   private reportPresence() {

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Keyboard, Lock, Pencil, SearchX, Settings, ZoomIn, ZoomOut } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Keyboard, Lock, MessageSquare, Pencil, SearchX, Settings, ZoomIn, ZoomOut } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { ChatEntry, ChatScope } from "@repo/protocol";
 import { AvatarPicker } from "@/components/AvatarPicker";
 import { AvatarBadge } from "@/components/AvatarSprite";
 import { GameCanvas } from "@/components/GameCanvas";
+import { ChatPanel } from "@/components/space/ChatPanel";
 import { DashboardLink, MeFallback } from "@/components/PageStates";
 import { ControlsCard, DisconnectDialog, JoinOverlay, ShareButton, SpaceTitle, useControlsHint } from "@/components/space/Hud";
 import { SpaceSettingsDialog } from "@/components/SpaceSettingsDialog";
@@ -19,6 +21,32 @@ import { useMe } from "@/lib/useMe";
 
 // Join and leave notices stop once a space is this busy; they'd be noise
 const MAX_PEOPLE_FOR_NOTICES = 15;
+// Nearby chat lives only in this tab; older lines are dropped past this many
+const MAX_NEARBY_MESSAGES = 200;
+// Saved space-wide chat fetched per "Load earlier messages"
+const CHAT_PAGE_SIZE = 50;
+// Whether the chat panel was last left open (per browser)
+const CHAT_OPEN_KEY = "luno:chat-open";
+
+/** The chat starts open on wider screens, unless it was closed last time; on phones it starts closed. */
+function initialChatOpen() {
+  if (typeof window === "undefined") return false;
+  try {
+    const saved = localStorage.getItem(CHAT_OPEN_KEY);
+    if (saved !== null) return saved === "true";
+  } catch {
+    // Storage blocked: fall back to the screen size
+  }
+  return window.matchMedia("(min-width: 640px)").matches;
+}
+
+/** Adds chat messages to a list, skipping ones already in it, oldest first. */
+function mergeChat(list: ChatEntry[], added: ChatEntry[]) {
+  const ids = new Set(list.map((m) => m.id));
+  const fresh = added.filter((m) => !ids.has(m.id));
+  if (fresh.length === 0) return list;
+  return [...list, ...fresh].sort((a, b) => a.at.localeCompare(b.at));
+}
 
 function loadError(e: unknown) {
   if (e instanceof ApiError && e.status === 404) {
@@ -49,6 +77,17 @@ export default function SpacePage() {
   const [showAvatar, setShowAvatar] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const controls = useControlsHint();
+  const [chat, setChat] = useState<Record<ChatScope, ChatEntry[]>>({ nearby: [], space: [] });
+  const [chatOpen, setChatOpen] = useState(initialChatOpen);
+  // Messages from others since joining, and how many of them had arrived when the chat was last open
+  const [received, setReceived] = useState(0);
+  const [seen, setSeen] = useState(0);
+  const [typing, setTyping] = useState(false);
+  const [nearbyCount, setNearbyCount] = useState(0);
+  // Everyone tab: whether older saved messages may exist, and a page is loading
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const chatInput = useRef<HTMLInputElement>(null);
 
   const isOwner = !!space && !!me && space.creatorId === me.id;
   const shown = space ? { ...space, ...info } : null;
@@ -84,6 +123,72 @@ export default function SpacePage() {
     setInfo((prev) => ({ ...prev, ...next }));
   }, []);
 
+  const onChatHistory = useCallback((entries: ChatEntry[]) => {
+    setChat((prev) => ({ ...prev, space: mergeChat(prev.space, entries) }));
+    setHasOlder((prev) => prev || entries.length > 0);
+  }, []);
+
+  const onChat = useCallback((entry: ChatEntry) => {
+    setChat((prev) => {
+      const merged = mergeChat(prev[entry.scope], [entry]);
+      return { ...prev, [entry.scope]: entry.scope === "nearby" ? merged.slice(-MAX_NEARBY_MESSAGES) : merged };
+    });
+    if (entry.userId !== me?.id) setReceived((n) => n + 1);
+  }, [me?.id]);
+
+  const onChatRejected = useCallback((message: string) => {
+    toast.error(message);
+  }, []);
+
+  function sendChat(text: string, scope: ChatScope) {
+    if (game?.sendChat(text, scope)) return true;
+    toast.error("You're offline. Wait for the connection to come back and try again.");
+    return false;
+  }
+
+  function loadOlderChat() {
+    const oldest = chat.space[0];
+    setLoadingOlder(true);
+    const query = new URLSearchParams({ limit: String(CHAT_PAGE_SIZE) });
+    if (oldest) query.set("before", oldest.at);
+    api<{ messages: ChatEntry[]; hasMore: boolean }>(`/space/${spaceId}/messages?${query}`)
+      .then(({ messages, hasMore }) => {
+        setChat((prev) => ({ ...prev, space: mergeChat(prev.space, messages) }));
+        setHasOlder(hasMore);
+      })
+      .catch((e) => toast.error(friendlyError(e)))
+      .finally(() => setLoadingOlder(false));
+  }
+
+  const openChat = useCallback(
+    (open: boolean) => {
+      setChatOpen(open);
+      setSeen(received);
+      try {
+        localStorage.setItem(CHAT_OPEN_KEY, String(open));
+      } catch {
+        // Not remembered; the default applies next time
+      }
+    },
+    [received]
+  );
+
+  // Enter opens the chat and puts the cursor in it (unless something else has focus, like a dialog's field)
+  useEffect(() => {
+    if (!joined) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Enter" || showAvatar || showSettings) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active.tagName !== "CANVAS") return;
+      e.preventDefault();
+      openChat(true);
+      // The input only exists once the panel has rendered open
+      requestAnimationFrame(() => chatInput.current?.focus());
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [joined, showAvatar, showSettings, openChat]);
+
   const options = useMemo<GameOptions | null>(
     () =>
       space && me
@@ -95,19 +200,23 @@ export default function SpacePage() {
             onPresence: setPeople,
             onSpaceUpdated,
             onArrival,
+            onChatHistory,
+            onChat,
+            onNearbyCount: setNearbyCount,
+            onChatRejected,
             onLoadProgress: setProgress,
           }
         : null,
     // `session` is a dependency on purpose: bumping it recreates the game, which joins again. Only the user's
     // id matters: a new avatar is swapped in place by the game.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [space, me?.id, onStatus, onSpaceUpdated, onArrival, session]
+    [space, me?.id, onStatus, onSpaceUpdated, onArrival, onChatHistory, onChat, onChatRejected, session]
   );
 
-  // A dialog over the game gets the keyboard; otherwise WASD would walk the player while it's open
+  // A dialog over the game, or typing in the chat, gets the keyboard; otherwise WASD would walk the player
   useEffect(() => {
-    game?.setKeyboardEnabled(!showAvatar && !showSettings);
-  }, [game, showAvatar, showSettings]);
+    game?.setKeyboardEnabled(!showAvatar && !showSettings && !typing);
+  }, [game, showAvatar, showSettings, typing]);
 
   function rejoin() {
     setJoined(false);
@@ -162,6 +271,22 @@ export default function SpacePage() {
             </div>
           </div>
 
+          <div className="pointer-events-none absolute inset-x-3 bottom-20 flex sm:inset-x-auto sm:bottom-4 sm:left-4">
+            <ChatPanel
+              open={chatOpen}
+              onOpenChange={openChat}
+              messages={chat}
+              hasOlder={hasOlder}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlderChat}
+              nearbyCount={nearbyCount}
+              meId={me.id}
+              inputRef={chatInput}
+              onSend={sendChat}
+              onTypingChange={setTyping}
+            />
+          </div>
+
           <div className="flex flex-col items-center gap-3">
             {controls.open && (
               <div className="pointer-events-auto">
@@ -191,6 +316,20 @@ export default function SpacePage() {
               </button>
               <button onClick={() => game?.zoomBy(1)} aria-label="Zoom in" title="Zoom in" className="btn-icon size-10 rounded-xl">
                 <ZoomIn className="size-5" />
+              </button>
+              <button
+                onClick={() => openChat(!chatOpen)}
+                aria-pressed={chatOpen}
+                aria-label="Chat"
+                title="Chat (Enter)"
+                className="btn-icon relative size-10 rounded-xl aria-pressed:bg-hover aria-pressed:text-primary-light"
+              >
+                <MessageSquare className="size-5" />
+                {!chatOpen && received > seen && (
+                  <span className="badge-unread" aria-label={`${received - seen} unread`}>
+                    {received - seen > 99 ? "99+" : received - seen}
+                  </span>
+                )}
               </button>
               <button
                 onClick={controls.toggle}
