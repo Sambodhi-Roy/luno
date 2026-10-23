@@ -25,3 +25,4 @@ const client = new PrismaClient({
 
 export default client;
 export { Prisma };
+export { CHAT_KEEP_PER_SPACE, CHAT_RETENTION_DAYS, pruneChatMessages } from "./chat.js";

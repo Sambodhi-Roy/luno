@@ -22,6 +22,7 @@ model User {
   role     Role
   space   Space[]
   memberships SpaceMember[]
+  chatMessages ChatMessage[]
   avatar  Avatar? @relation(fields: [avatarId], references: [id])
 }
 
@@ -45,6 +46,21 @@ model Space {
   map       Map?    @relation(fields: [mapId], references: [id], onDelete: SetNull)
   elements  spaceElements[]
   members   SpaceMember[]
+  chatMessages ChatMessage[]
+}
+
+// Messages sent to everyone in a space. Nearby (proximity) messages are never stored. Old rows are pruned
+// (pruneChatMessages): at most CHAT_RETENTION_DAYS old and the latest CHAT_KEEP_PER_SPACE per space.
+model ChatMessage {
+  id        String   @id @default(cuid())
+  spaceId   String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, createdAt])
 }
 
 // Non-owners who joined a space (public visit or invite). The owner is Space.creatorId, never a row here.
