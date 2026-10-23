@@ -19,6 +19,7 @@ import {
   leaveSpace,
   visitSpace,
 } from "../../controllers/membership.controller.js";
+import { getChatHistory } from "../../controllers/chat.controller.js";
 import { updateCustomMap, uploadSpaceThumbnail } from "../../controllers/customMap.controller.js";
 import { MAX_IMAGE_BYTES, receiveFiles } from "../../lib/uploads.js";
 import { authenticateUser } from "../../middleware/userAuth.middleware.js";
@@ -55,6 +56,9 @@ spaceRouter.post("/:spaceId/visit", authenticateUser, visitSpace);
 spaceRouter.post("/:spaceId/invite/reset", authenticateUser, resetInviteCode);
 
 spaceRouter.delete("/:spaceId/membership", authenticateUser, leaveSpace);
+
+// Saved space-wide chat, a page at a time (?before=<ISO time>&limit=50)
+spaceRouter.get("/:spaceId/messages", authenticateUser, getChatHistory);
 
 // Custom maps: the editor saves floors and walls, and uploads a rendered cover
 spaceRouter.put("/:spaceId/custom-map", authenticateUser, updateCustomMap);
