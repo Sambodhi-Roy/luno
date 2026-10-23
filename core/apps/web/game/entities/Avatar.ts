@@ -10,6 +10,10 @@ const SPRITE_SCALE = 1;
 const SPRITE_HEIGHT = 32 * SPRITE_SCALE;
 // Names always render above characters and furniture, whose depth is their y position
 const LABEL_DEPTH = 1_000_000;
+// Speech bubbles render above every name
+const BUBBLE_DEPTH = LABEL_DEPTH + 1;
+// Longer chat messages are cut short in the bubble (the chat panel shows them in full)
+const BUBBLE_MAX_CHARS = 90;
 // The "you" marker under the local player's feet
 const SELF_MARKER_WIDTH = 26;
 const SELF_MARKER_HEIGHT = 10;
@@ -31,9 +35,14 @@ const color = (name: string) => Phaser.Display.Color.HexStringToColor(themeColor
 export class Avatar {
   readonly sprite: Phaser.GameObjects.Sprite;
   private readonly label: Phaser.GameObjects.Container;
+  private labelHeight = 0;
+  // The last thing this character said in chat, shown for a few seconds
+  private bubble: Phaser.GameObjects.Container | null = null;
+  private bubbleTimer: Phaser.Time.TimerEvent | null = null;
   private readonly marker: Phaser.GameObjects.Ellipse | null;
   // Label position relative to the sprite, read once since it's used on every animation frame
   private readonly labelOffset = parseFloat(cssVar("--game-label-offset-y"));
+  private readonly bubbleGap = parseFloat(cssVar("--game-bubble-gap"));
   private tween: Phaser.Tweens.Tween | null = null;
   // Other players only: steps reported by the server that haven't been animated yet, and the way to face once
   // they're done
@@ -151,7 +160,43 @@ export class Avatar {
     if (!this.moving) this.idle();
   }
 
+  /** Shows a chat message in a bubble above the name for a few seconds, replacing any earlier one. */
+  say(message: string) {
+    this.clearBubble();
+    const padX = parseFloat(cssVar("--game-bubble-padding-x"));
+    const padY = parseFloat(cssVar("--game-bubble-padding-y"));
+    const tail = parseFloat(cssVar("--game-bubble-tail"));
+    const shown = message.length > BUBBLE_MAX_CHARS ? `${message.slice(0, BUBBLE_MAX_CHARS - 1).trimEnd()}…` : message;
+    const text = this.scene.add
+      .text(0, 0, shown, {
+        fontFamily: bodyFont(),
+        fontSize: cssVar("--game-bubble-font-size"),
+        color: themeColor("copy"),
+        align: "center",
+        wordWrap: { width: parseFloat(cssVar("--game-bubble-max-width")), useAdvancedWrap: true },
+        resolution: window.devicePixelRatio * parseFloat(cssVar("--game-label-supersample")),
+      })
+      .setOrigin(0.5, 1);
+
+    const width = text.width + padX * 2;
+    const height = text.height + padY * 2;
+    const box = this.scene.add.graphics();
+    box.fillStyle(color("raised"), 1);
+    box.lineStyle(1, color("border"), 1);
+    box.fillRoundedRect(-width / 2, -height - tail, width, height, parseFloat(cssVar("--game-bubble-radius")));
+    box.strokeRoundedRect(-width / 2, -height - tail, width, height, parseFloat(cssVar("--game-bubble-radius")));
+    box.fillTriangle(-tail, -tail, tail, -tail, 0, 0);
+    text.setY(-padY - tail);
+
+    this.bubble = this.scene.add.container(0, 0, [box, text]).setDepth(BUBBLE_DEPTH);
+    this.bubbleTimer = this.scene.time.delayedCall(parseFloat(cssVar("--game-bubble-duration")) * 1000, () =>
+      this.clearBubble()
+    );
+    this.syncAttachments();
+  }
+
   destroy() {
+    this.clearBubble();
     this.tween?.remove();
     this.sprite.destroy();
     this.label.destroy();
@@ -199,8 +244,16 @@ export class Avatar {
     pill.fillStyle(color(isSelf ? "primary" : "background"), isSelf ? 1 : parseFloat(cssVar("--game-label-opacity")));
     pill.fillRoundedRect(-width / 2, -height, width, height, Math.min(parseFloat(cssVar("--game-label-radius")), height / 2));
     text.setY(-padY);
+    this.labelHeight = height;
 
     return this.scene.add.container(0, 0, [pill, text]).setDepth(LABEL_DEPTH);
+  }
+
+  private clearBubble() {
+    this.bubbleTimer?.remove();
+    this.bubbleTimer = null;
+    this.bubble?.destroy();
+    this.bubble = null;
   }
 
   private finishStep() {
@@ -226,6 +279,7 @@ export class Avatar {
     // Draw in front of anything whose bottom edge is above the character's feet
     this.sprite.setDepth(y);
     this.label.setPosition(x, y - SPRITE_HEIGHT + this.labelOffset);
+    this.bubble?.setPosition(x, this.label.y - this.labelHeight - this.bubbleGap);
     // Just under the feet, and just behind the character
     this.marker?.setPosition(x, y - SELF_MARKER_HEIGHT / 2).setDepth(y - 1);
   }

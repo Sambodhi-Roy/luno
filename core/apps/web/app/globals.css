@@ -102,6 +102,15 @@
   --game-destination-opacity: 0.25;
   /* Custom map editor: fill of the spawn point tile */
   --game-spawn-opacity: 0.3;
+  /* Chat speech bubbles over characters (read by game/entities/Avatar.ts); sizes in world pixels */
+  --game-bubble-font-size: 9px;
+  --game-bubble-max-width: 120px;
+  --game-bubble-padding-x: 6px;
+  --game-bubble-padding-y: 4px;
+  --game-bubble-radius: 6px;
+  --game-bubble-gap: 3px;
+  --game-bubble-tail: 4px;
+  --game-bubble-duration: 6s;
 }
 
 @layer base {
@@ -256,6 +265,11 @@
 
 @utility badge-primary {
   @apply badge bg-primary/15 text-primary-light;
+}
+
+/* Unread count pinned to the corner of a button; the button must be `relative` */
+@utility badge-unread {
+  @apply absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-bold text-primary-content tabular-nums;
 }
 
 /* Dropdown opened from a ⋯ button; its parent must be `relative` */
